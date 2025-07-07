@@ -72,6 +72,8 @@ type Raft struct {
     // Look at the paper's Figure 2 for a description of what
     // state a Raft server must maintain.
 
+    // Election timeout fields
+    electionTicker *ElectionTicker
 }
 
 // return currentTerm and whether this server
@@ -143,63 +145,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 }
 
 //
-// example RequestVote RPC arguments structure.
-// field names must start with capital letters!
-//
-type RequestVoteArgs struct {
-    // Your data here (2A, 2B).
-}
-
-//
-// example RequestVote RPC reply structure.
-// field names must start with capital letters!
-//
-type RequestVoteReply struct {
-    // Your data here (2A).
-}
-
-//
-// example RequestVote RPC handler.
-//
-func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-    // Your code here (2A, 2B).
-}
-
-//
-// example code to send a RequestVote RPC to a server.
-// server is the index of the target server in rf.peers[].
-// expects RPC arguments in args.
-// fills in *reply with RPC reply, so caller should
-// pass &reply.
-// the types of the args and reply passed to Call() must be
-// the same as the types of the arguments declared in the
-// handler function (including whether they are pointers).
-//
-// The labrpc package simulates a lossy network, in which servers
-// may be unreachable, and in which requests and replies may be lost.
-// Call() sends a request and waits for a reply. If a reply arrives
-// within a timeout interval, Call() returns true; otherwise
-// Call() returns false. Thus Call() may not return for a while.
-// A false return can be caused by a dead server, a live server that
-// can't be reached, a lost request, or a lost reply.
-//
-// Call() is guaranteed to return (perhaps after a delay) *except* if the
-// handler function on the server side does not return.  Thus there
-// is no need to implement your own timeouts around Call().
-//
-// look at the comments in ../labrpc/labrpc.go for more details.
-//
-// if you're having trouble getting RPC to work, check that you've
-// capitalized all field names in structs passed over RPC, and
-// that the caller passes the address of the reply struct with &, not
-// the struct itself.
-//
-func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
-    ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
-    return ok
-}
-
-//
 // the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
 // server isn't the leader, returns false. otherwise start the
@@ -234,9 +179,13 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 // confusing debug output. any goroutine with a long-running loop
 // should call killed() to check whether it should stop.
 //
+// Simulate a server's death.
 func (rf *Raft) Kill() {
     atomic.StoreInt32(&rf.dead, 1)
-    // Your code here, if desired.
+    // Stop the election ticker when killed
+    if rf.electionTicker != nil {
+        rf.electionTicker.Stop()
+    }
 }
 
 func (rf *Raft) killed() bool {
@@ -247,13 +196,36 @@ func (rf *Raft) killed() bool {
 // The ticker go routine starts a new election if this peer hasn't received
 // heartbeats recently.
 func (rf *Raft) ticker() {
+    // Start the election ticker
+    rf.electionTicker.Start()
+
+    // Listen for election timeouts
     for rf.killed() == false {
-
-        // Your code here to check if a leader election should
-        // be started and to randomize sleeping time using
-        // time.Sleep().
-
+        select {
+        case <-rf.electionTicker.GetTimeoutChan():
+            // Election timeout occurred, start a new election
+            rf.startElection()
+        }
     }
+
+    // Clean up when killed
+    rf.electionTicker.Stop()
+}
+
+// Helper function to start a new election
+func (rf *Raft) startElection() {
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
+
+    // Reset election timeout for next election
+    rf.electionTicker.Reset()
+
+    // TODO: Implement election logic here
+    // This would include:
+    // 1. Increment current term
+    // 2. Vote for self
+    // 3. Send RequestVote RPCs to other servers
+    // 4. Collect votes and determine if we become leader
 }
 
 //
@@ -274,6 +246,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
     rf.persister = persister
     rf.me = me
 
+    // Initialize election ticker with timeout constants from election.go
+    rf.electionTicker = NewElectionTicker(electionTimeoutMin, electionTimeoutMax)
+
     // Your initialization code here (2A, 2B, 2C).
 
     // initialize from state persisted before a crash
@@ -283,4 +258,11 @@ func Make(peers []*labrpc.ClientEnd, me int,
     go rf.ticker()
 
     return rf
+}
+
+// When a server learns of a higher term, it should update its term.
+// A server state change may happen.
+// Returns true if the term was updated, false otherwise.
+func (rf *Raft) maybeUpdateTerm(term int) bool {
+    return false
 }
