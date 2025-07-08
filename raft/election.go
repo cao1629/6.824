@@ -101,31 +101,34 @@ func (rf *Raft) startElection(term int) {
             return
         }
 
-        args := RequestVoteArgs{
-            rf.currentTerm,
-            rf.me,
-        }
-
-        reply := RequestVoteReply{}
-
-        rf.peers[i].Call("Raft.RequestVote", &args, &reply)
-
-        // Check the context. If the context is lost, we do not need to process the reply.
-        if rf.isContextLost(term) {
-            return
-        }
-
-        // Whenever a server receives a message, it might need to update its term.
-        if did := rf.maybeUpdateTerm(reply.Term); did {
-            return
-        }
-
-        if reply.VoteGranted {
-            votes++
-            if votes > len(rf.peers)/2 {
-                rf.changeToLeader()
+        go func() {
+            args := RequestVoteArgs{
+                rf.currentTerm,
+                rf.me,
             }
-        }
+
+            reply := RequestVoteReply{}
+
+            rf.peers[i].Call("Raft.RequestVote", &args, &reply)
+
+            // Check the context. If the context is lost, we do not need to process the reply.
+            if rf.isContextLost(term) {
+                return
+            }
+
+            // Whenever a server receives a message, it might need to update its term.
+            if did := rf.maybeUpdateTerm(reply.Term); did {
+                return
+            }
+
+            if reply.VoteGranted {
+                votes++
+                if votes > len(rf.peers)/2 {
+                    rf.changeToLeader()
+                }
+            }
+        }()
+
     }
 }
 
