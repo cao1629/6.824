@@ -43,11 +43,6 @@ func NewElectionTicker(minTimeout, maxTimeout time.Duration) *ElectionTicker {
     }
 }
 
-// GetTimeoutChan returns the channel that receives timeout notifications
-func (tk *ElectionTicker) GetTimeoutChan() <-chan struct{} {
-    return tk.timeoutChan
-}
-
 // generateRandomTimeout generates a random timeout between min and max
 func (tk *ElectionTicker) generateRandomTimeout() time.Duration {
     if tk.electionTimeoutMin >= tk.electionTimeoutMax {

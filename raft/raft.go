@@ -74,6 +74,10 @@ type Raft struct {
 
     // Election timeout fields
     electionTicker *ElectionTicker
+
+    currentTerm int
+    votedFor    int // -1 means no vote
+    serverState ServerState
 }
 
 // return currentTerm and whether this server
@@ -198,34 +202,19 @@ func (rf *Raft) killed() bool {
 func (rf *Raft) ticker() {
     // Start the election ticker
     rf.electionTicker.Start()
+    defer rf.electionTicker.Stop()
 
     // Listen for election timeouts
     for rf.killed() == false {
         select {
-        case <-rf.electionTicker.GetTimeoutChan():
+        case <-rf.electionTicker.timeoutChan:
             // Election timeout occurred, start a new election
-            rf.startElection()
+            // Before starting a new election, we reset the ticker and enter a new term.
+            rf.electionTicker.Reset()
+            rf.currentTerm++
+            go rf.startElection(rf.currentTerm)
         }
     }
-
-    // Clean up when killed
-    rf.electionTicker.Stop()
-}
-
-// Helper function to start a new election
-func (rf *Raft) startElection() {
-    rf.mu.Lock()
-    defer rf.mu.Unlock()
-
-    // Reset election timeout for next election
-    rf.electionTicker.Reset()
-
-    // TODO: Implement election logic here
-    // This would include:
-    // 1. Increment current term
-    // 2. Vote for self
-    // 3. Send RequestVote RPCs to other servers
-    // 4. Collect votes and determine if we become leader
 }
 
 //
@@ -264,5 +253,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 // A server state change may happen.
 // Returns true if the term was updated, false otherwise.
 func (rf *Raft) maybeUpdateTerm(term int) bool {
+    if term > rf.currentTerm {
+        rf.currentTerm = term
+        rf.changeToFollower()
+        return true
+    }
     return false
 }

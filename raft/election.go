@@ -13,6 +13,8 @@ const (
 //
 type RequestVoteArgs struct {
     // Your data here (2A, 2B).
+    Term        int
+    CandidateId int
 }
 
 //
@@ -21,6 +23,8 @@ type RequestVoteArgs struct {
 //
 type RequestVoteReply struct {
     // Your data here (2A).
+    Term        int
+    VoteGranted bool
 }
 
 //
@@ -62,4 +66,77 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
     ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
     return ok
+}
+
+// startElection is running concurrently. There is a chance that the server loses the context. (no longer a candidate, a new term)
+//
+// no longer a candidate, and a new term
+// 1. become a leader: an election with a higher term won the election
+// 2. become a follower: a heartbeat from a leader with a higher term
+//
+// no longer a candidate, but the term is still the same
+// 1. become a follower: send RequestVote RPCs to a leader with the same term
+// 2. become a leader: this candidate has already received enough votes to become a leader. It does not need to process
+// more votes from other servers with the same term.
+func (rf *Raft) startElection(term int) {
+
+    // TODO: Implement election logic here
+    // This would include:
+    // 1. Increment current term
+    // 2. Vote for self
+    // 3. Send RequestVote RPCs to other servers
+    // 4. Collect votes and determine if we become leader
+
+    // Vote for self
+    votes := 1
+    rf.votedFor = rf.me
+
+    for i := range rf.peers {
+        if i == rf.me {
+            continue
+        }
+
+        // Check the context. If the context is lost, we do not need to send RequestVote for this term's election.
+        if rf.isContextLost(term) {
+            return
+        }
+
+        args := RequestVoteArgs{
+            rf.currentTerm,
+            rf.me,
+        }
+
+        reply := RequestVoteReply{}
+
+        rf.peers[i].Call("Raft.RequestVote", &args, &reply)
+
+        // Check the context. If the context is lost, we do not need to process the reply.
+        if rf.isContextLost(term) {
+            return
+        }
+
+        // Whenever a server receives a message, it might need to update its term.
+        if did := rf.maybeUpdateTerm(reply.Term); did {
+            return
+        }
+
+        if reply.VoteGranted {
+            votes++
+            if votes > len(rf.peers)/2 {
+                rf.changeToLeader()
+            }
+        }
+    }
+}
+
+func (rf *Raft) isContextLost(term int) bool {
+    if rf.currentTerm > term {
+        return true
+    }
+
+    if rf.serverState != Candidate {
+        return true
+    }
+
+    return false
 }

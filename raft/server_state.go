@@ -1,9 +1,13 @@
 package raft
 
 // When calling this method, I'm sure that this server will be the leader.
-func (rf *Raft) changeToLeader() {}
+func (rf *Raft) changeToLeader() {
+    rf.electionTicker.Pause()
+}
 
-func (rf *Raft) changeToFollower() {}
+func (rf *Raft) changeToFollower() {
+    rf.electionTicker.Reset()
+}
 
 func (rf *Raft) changeToCandidate() {}
 
