@@ -78,6 +78,8 @@ type Raft struct {
     currentTerm int
     votedFor    int // -1 means no vote
     serverState ServerState
+
+    noLongerLeader chan struct{} // channel to signal transition to leader state
 }
 
 // return currentTerm and whether this server
@@ -256,6 +258,7 @@ func (rf *Raft) maybeUpdateTerm(term int) bool {
     if term > rf.currentTerm {
         rf.currentTerm = term
         rf.changeToFollower()
+        rf.noLongerLeader <- struct{}{}
         return true
     }
     return false

@@ -3,10 +3,12 @@ package raft
 // When calling this method, I'm sure that this server will be the leader.
 func (rf *Raft) changeToLeader() {
     rf.electionTicker.Pause()
+    go rf.Heartbeat()
 }
 
 func (rf *Raft) changeToFollower() {
     rf.electionTicker.Reset()
+    rf.votedFor = -1
 }
 
 func (rf *Raft) changeToCandidate() {}

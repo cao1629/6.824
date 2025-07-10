@@ -32,6 +32,24 @@ type RequestVoteReply struct {
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
     // Your code here (2A, 2B).
+    if args.Term < rf.currentTerm {
+        reply.Term = rf.currentTerm
+        reply.VoteGranted = false
+        return
+    }
+
+    rf.maybeUpdateTerm(args.Term)
+
+    if rf.votedFor == -1 {
+        rf.votedFor = args.CandidateId
+    }
+
+    reply.Term = rf.currentTerm
+    if rf.votedFor == args.CandidateId {
+        reply.VoteGranted = true
+    } else {
+        reply.VoteGranted = false
+    }
 }
 
 //
@@ -80,13 +98,6 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 // more votes from other servers with the same term.
 func (rf *Raft) startElection(term int) {
 
-    // TODO: Implement election logic here
-    // This would include:
-    // 1. Increment current term
-    // 2. Vote for self
-    // 3. Send RequestVote RPCs to other servers
-    // 4. Collect votes and determine if we become leader
-
     // Vote for self
     votes := 1
     rf.votedFor = rf.me
@@ -101,6 +112,7 @@ func (rf *Raft) startElection(term int) {
             return
         }
 
+        peerIdx := i
         go func() {
             args := RequestVoteArgs{
                 rf.currentTerm,
@@ -109,7 +121,7 @@ func (rf *Raft) startElection(term int) {
 
             reply := RequestVoteReply{}
 
-            rf.peers[i].Call("Raft.RequestVote", &args, &reply)
+            rf.sendRequestVote(peerIdx, &args, &reply)
 
             // Check the context. If the context is lost, we do not need to process the reply.
             if rf.isContextLost(term) {
@@ -128,7 +140,6 @@ func (rf *Raft) startElection(term int) {
                 }
             }
         }()
-
     }
 }
 
