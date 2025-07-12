@@ -21,6 +21,7 @@ import (
     //	"bytes"
     "sync"
     "sync/atomic"
+    "time"
 
     //	"6.824/labgob"
     "6.824/labrpc"
@@ -37,9 +38,17 @@ import (
 // snapshots) on the applyCh, but set CommandValid to false for these
 // other uses.
 //
+// log已经commit了 可以apply了
 type ApplyMsg struct {
+    // indicates if this message contains a newly committed log entry
+    // 如果是true 这个 ApplyMsg 就是一个command message
+    // 如果是false 这个 ApplyMsg 就是一个snapshot message
     CommandValid bool
-    Command      interface{}
+
+    // command to apply to state machine
+    Command interface{}
+
+    // log index
     CommandIndex int
 
     // For 2D:
@@ -72,20 +81,28 @@ type Raft struct {
     // Look at the paper's Figure 2 for a description of what
     // state a Raft server must maintain.
 
-    // Election timeout fields
-    electionTicker *ElectionTicker
-
     currentTerm int
     votedFor    int // -1 means no vote
     serverState ServerState
 
-    noLongerLeader chan struct{} // channel to signal transition to leader state
+    // log
+    log        []LogEntry
+    nextIndex  []int
+    matchIndex []int
+
+    // Control channels
+    // 从candidate变成了leader
+    electedCh chan struct{}
+
+    // 可以从leader变成follower 也可以从candidate变成follower
+    becomeFollowerCh chan ServerState
+    killCh           chan struct{}
+    resetTimeoutCh   chan struct{}
 }
 
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
-
     var term int
     var isleader bool
     // Your code here (2A).
@@ -189,34 +206,12 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) Kill() {
     atomic.StoreInt32(&rf.dead, 1)
     // Stop the election ticker when killed
-    if rf.electionTicker != nil {
-        rf.electionTicker.Stop()
-    }
+
 }
 
 func (rf *Raft) killed() bool {
     z := atomic.LoadInt32(&rf.dead)
     return z == 1
-}
-
-// The ticker go routine starts a new election if this peer hasn't received
-// heartbeats recently.
-func (rf *Raft) ticker() {
-    // Start the election ticker
-    rf.electionTicker.Start()
-    defer rf.electionTicker.Stop()
-
-    // Listen for election timeouts
-    for rf.killed() == false {
-        select {
-        case <-rf.electionTicker.timeoutChan:
-            // Election timeout occurred, start a new election
-            // Before starting a new election, we reset the ticker and enter a new term.
-            rf.electionTicker.Reset()
-            rf.currentTerm++
-            go rf.startElection(rf.currentTerm)
-        }
-    }
 }
 
 //
@@ -237,16 +232,50 @@ func Make(peers []*labrpc.ClientEnd, me int,
     rf.persister = persister
     rf.me = me
 
-    // Initialize election ticker with timeout constants from election.go
-    rf.electionTicker = NewElectionTicker(electionTimeoutMin, electionTimeoutMax)
+    rf.nextIndex = make([]int, len(peers))
+    rf.matchIndex = make([]int, len(peers))
 
     // Your initialization code here (2A, 2B, 2C).
+    go func() {
+        // heartbeatTicker在leader时运行
+        heartbeatTicker := time.NewTicker(heartbeatInterval)
+        defer heartbeatTicker.Stop()
+
+        // electionTicker在follower和candidate时运行
+        electionTicker := time.NewTicker(generateRandomTimeout())
+        defer electionTicker.Stop()
+
+        for {
+            select {
+            case <-heartbeatTicker.C:
+                go rf.InitiateElection()
+            case <-electionTicker.C:
+                go rf.InitiateAppendEntries()
+            case <-rf.electedCh:
+                // 在rf.InitiateElection中会 rf.electedCh <- struct{}{}
+                // 现在我从candidate变成了leader了
+                electionTicker.Stop()
+                heartbeatTicker = time.NewTicker(heartbeatInterval)
+            case previousServerState := <-rf.becomeFollowerCh:
+                // 在maybeUpdateTerm中会 rf.becomeFollowerCh <- struct{}{}
+
+                // 如果是从candidate变成follower 本来heartbeatTicker就已经停掉了
+                if previousServerState == Leader {
+                    heartbeatTicker.Stop()
+                }
+
+                electionTicker = time.NewTicker(generateRandomTimeout())
+            case <-rf.resetTimeoutCh:
+                // follower收到leader的heartbeat就reset electionTicker
+                electionTicker.Reset(generateRandomTimeout())
+            case <-rf.killCh:
+                return
+            }
+        }
+    }()
 
     // initialize from state persisted before a crash
     rf.readPersist(persister.ReadRaftState())
-
-    // start ticker goroutine to start elections
-    go rf.ticker()
 
     return rf
 }
@@ -257,8 +286,11 @@ func Make(peers []*labrpc.ClientEnd, me int,
 func (rf *Raft) maybeUpdateTerm(term int) bool {
     if term > rf.currentTerm {
         rf.currentTerm = term
-        rf.changeToFollower()
-        rf.noLongerLeader <- struct{}{}
+
+        if rf.serverState != Follower {
+            rf.changeToFollower()
+        }
+
         return true
     }
     return false
