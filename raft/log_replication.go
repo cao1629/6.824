@@ -67,7 +67,6 @@ func (rf *Raft) startAppendEntries() {
             if toFollower := rf.maybeUpdateTerm(reply.Term); toFollower {
                 return
             }
-
         }()
     }
 }

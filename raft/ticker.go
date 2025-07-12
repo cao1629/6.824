@@ -43,7 +43,6 @@ func NewElectionTicker(minTimeout, maxTimeout time.Duration) *ElectionTicker {
     }
 }
 
-// generateRandomTimeout generates a random timeout between min and max
 func (tk *ElectionTicker) generateRandomTimeout() time.Duration {
     if tk.electionTimeoutMin >= tk.electionTimeoutMax {
         return tk.electionTimeoutMin
