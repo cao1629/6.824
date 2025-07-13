@@ -12,11 +12,10 @@ func (rf *Raft) changeToLeader() {
     rf.electedCh <- struct{}{}
 }
 
-//
-func (rf *Raft) changeToFollower() {
+func (rf *Raft) changeToFollower(previousState ServerState) {
     rf.votedFor = -1
     rf.serverState = Follower
-    rf.becomeFollowerCh <- struct{}{}
+    rf.becomeFollowerCh <- previousState
 }
 
 func (rf *Raft) changeToCandidate() {

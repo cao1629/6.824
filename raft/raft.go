@@ -288,7 +288,7 @@ func (rf *Raft) maybeUpdateTerm(term int) bool {
         rf.currentTerm = term
 
         if rf.serverState != Follower {
-            rf.changeToFollower()
+            rf.changeToFollower(rf.serverState)
         }
 
         return true

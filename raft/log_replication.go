@@ -86,7 +86,7 @@ func (rf *Raft) InitiateAppendEntries() {
                 // 我要说明我变成了谁的follower 所以我要更新voteFor
                 rf.votedFor = args.LeaderId
 
-                // 我不再是leader了 所以我也不用处理reply了
+                // 现在我不再是leader了 所以我也不用处理reply了
                 return
             }
 

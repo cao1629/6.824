@@ -25,20 +25,28 @@ type RequestVoteReply struct {
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
     // Your code here (2A, 2B).
-    if args.Term < rf.currentTerm {
-        reply.Term = rf.currentTerm
-        reply.VoteGranted = false
+
+    reply.Term = rf.currentTerm
+    reply.VoteGranted = false
+
+    // 直接ignore
+    if rf.currentTerm > args.Term {
         return
     }
 
-    rf.maybeUpdateTerm(args.Term)
-
-    if rf.votedFor == -1 {
+    // 我现在可能是leader, candidate, or follower with a smaller term
+    // 我是leader with a smaller term, 我现在的voteFor就是我自己
+    // 我的candidate with a smaller term, 我现在的voteFor也是我自己
+    // 我是follower with a smaller term 我现在的voteFor是一个leader with a smaller term  或者voteFor是-1
+    // 如果我确实update term了 那么现在我一定vote for 这个candidate with a higher term
+    if didUpdate := rf.maybeUpdateTerm(args.Term); didUpdate {
         rf.votedFor = args.CandidateId
+        reply.VoteGranted = true
     }
 
-    reply.Term = rf.currentTerm
-    if rf.votedFor == args.CandidateId {
+    // 还有一种情况 就是我的term 跟candidate的term一样 但是这一个term里面 我已经投过票了
+    if rf.votedFor == -1 {
+        rf.votedFor = args.CandidateId
         reply.VoteGranted = true
     } else {
         reply.VoteGranted = false
