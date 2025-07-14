@@ -1,5 +1,7 @@
 package raft
 
+import "sort"
+
 type LogEntry struct {
     Term    int
     Command interface{}
@@ -52,7 +54,14 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // 怎么样才算Success?
     // log match上了 然后args.Entries也被append上了
     reply.Success = true
+}
 
+func (rf *Raft) findCommitIndex() int {
+    tmpMatchIndex := make([]int, len(rf.matchIndex))
+    copy(tmpMatchIndex, rf.matchIndex)
+    sort.Ints(tmpMatchIndex)
+    // index是:0 1 2 3 4 5  中位数的索引是(len-1)/2
+    return tmpMatchIndex[len(tmpMatchIndex)-1/2]
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
@@ -97,6 +106,10 @@ func (rf *Raft) InitiateAppendEntries() {
                 // replicate到对面成功了
                 rf.nextIndex[peerIdx]++
                 rf.matchIndex[peerIdx] = args.PrevLogIndex + len(args.Entries) - 1
+                newCommitIndex := rf.findCommitIndex()
+                if newCommitIndex > rf.commitIndex {
+                    rf.commitIndex = newCommitIndex
+                }
             }
         }()
     }

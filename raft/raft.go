@@ -28,37 +28,6 @@ import (
 )
 
 //
-// as each Raft peer becomes aware that successive log entries are
-// committed, the peer should send an ApplyMsg to the service (or
-// tester) on the same server, via the applyCh passed to Make(). set
-// CommandValid to true to indicate that the ApplyMsg contains a newly
-// committed log entry.
-//
-// in part 2D you'll want to send other kinds of messages (e.g.,
-// snapshots) on the applyCh, but set CommandValid to false for these
-// other uses.
-//
-// log已经commit了 可以apply了
-type ApplyMsg struct {
-    // indicates if this message contains a newly committed log entry
-    // 如果是true 这个 ApplyMsg 就是一个command message
-    // 如果是false 这个 ApplyMsg 就是一个snapshot message
-    CommandValid bool
-
-    // command to apply to state machine
-    Command interface{}
-
-    // log index
-    CommandIndex int
-
-    // For 2D:
-    SnapshotValid bool
-    Snapshot      []byte
-    SnapshotTerm  int
-    SnapshotIndex int
-}
-
-//
 // A Go object implementing a single Raft peer.
 //
 type Raft struct {
@@ -89,6 +58,9 @@ type Raft struct {
     log        []LogEntry
     nextIndex  []int
     matchIndex []int
+
+    commitIndex int
+    lastApplied int
 
     // Control channels
     // 从candidate变成了leader

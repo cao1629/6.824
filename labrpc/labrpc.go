@@ -81,6 +81,8 @@ type ClientEnd struct {
 // send an RPC, wait for the reply.
 // the return value indicates success; false means that
 // no reply was received from the server.
+//
+// synchronously sends a request to the server and waits for the reply.
 func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bool {
     req := reqMsg{}
     req.endname = e.endname
@@ -101,6 +103,7 @@ func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bo
     select {
     case e.ch <- req:
         // the request has been sent.
+        // 把一个 req 送到一个 chan reqMsg里
     case <-e.done:
         // entire Network has been destroyed.
         return false
@@ -108,6 +111,7 @@ func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bo
 
     //
     // wait for the reply.
+    // req里面有一个 chan replyMsg  block等待
     //
     rep := <-req.replyCh
     if rep.ok {
@@ -215,6 +219,7 @@ func (rn *Network) isServerDead(endname interface{}, servername interface{}, ser
     return false
 }
 
+// 处理req 把结果送到req.replyCh里
 func (rn *Network) processReq(req reqMsg) {
     enabled, servername, server, reliable, longreordering := rn.readEndnameInfo(req.endname)
 
@@ -235,15 +240,24 @@ func (rn *Network) processReq(req reqMsg) {
         // in a separate thread so that we can periodically check
         // if the server has been killed and the RPC should get a
         // failure reply.
+        //
+        // go的future
+        // 留一个channel 然后开一个goroutine 里面得到结果了把结果送进这个channel
+        // 后面再从这个channel里取结果
         ech := make(chan replyMsg)
+
         go func() {
+
             r := server.dispatch(req)
+
+            // 执行完了 有了replyMsg 送进ech
             ech <- r
         }()
 
         // wait for handler to return,
         // but stop waiting if DeleteServer() has been called,
         // and return an error.
+        // 从ech取到结果之后 送到reqMsg里面的replyCh里
         var reply replyMsg
         replyOK := false
         serverDead := false
