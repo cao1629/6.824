@@ -53,13 +53,11 @@ func NewLogApplier(applyCh chan ApplyMsg) *LogApplier {
                 return
             case <-logApplier.applySignalCh:
                 logApplier.Apply()
-
             }
         }
     }()
 
     return logApplier
-
 }
 
 func (logApplier *LogApplier) Apply() {
@@ -71,6 +69,5 @@ func (logApplier *LogApplier) Apply() {
             CommandIndex: i,
         }
     }
-
     logApplier.rf.lastApplied = logApplier.rf.commitIndex
 }

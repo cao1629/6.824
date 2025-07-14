@@ -70,6 +70,9 @@ type Raft struct {
     becomeFollowerCh chan ServerState
     killCh           chan struct{}
     resetTimeoutCh   chan struct{}
+
+    applyCh    chan ApplyMsg
+    logApplier *LogApplier
 }
 
 // return currentTerm and whether this server
@@ -154,13 +157,18 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-    index := -1
-    term := -1
-    isLeader := true
-
     // Your code here (2B).
+    if rf.serverState != Leader {
+        return 0, 0, false
+    }
 
-    return index, term, isLeader
+    rf.log = append(rf.log, LogEntry{
+        Term:         rf.currentTerm,
+        Command:      command,
+        CommandValid: true,
+    })
+
+    return len(rf.log) - 1, rf.currentTerm, true
 }
 
 //
@@ -206,6 +214,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
     rf.nextIndex = make([]int, len(peers))
     rf.matchIndex = make([]int, len(peers))
+
+    rf.applyCh = applyCh
+    rf.logApplier = NewLogApplier(applyCh)
 
     // Your initialization code here (2A, 2B, 2C).
     go func() {

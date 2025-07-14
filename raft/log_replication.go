@@ -3,8 +3,9 @@ package raft
 import "sort"
 
 type LogEntry struct {
-    Term    int
-    Command interface{}
+    Term         int
+    Command      interface{}
+    CommandValid bool
 }
 
 type AppendEntriesArgs struct {
@@ -109,6 +110,7 @@ func (rf *Raft) InitiateAppendEntries() {
                 newCommitIndex := rf.findCommitIndex()
                 if newCommitIndex > rf.commitIndex {
                     rf.commitIndex = newCommitIndex
+                    rf.logApplier.applySignalCh <- struct{}{}
                 }
             }
         }()
