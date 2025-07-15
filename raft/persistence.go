@@ -9,7 +9,11 @@ package raft
 // test with the original before submitting.
 //
 
-import "sync"
+import (
+    "6.824/labgob"
+    "bytes"
+    "sync"
+)
 
 // 用来模拟 disk  non-volatile的东西不存到disk上  存到Persister里面
 // when a Raft peer crashes, it loses its volatile state, but retains its
@@ -45,12 +49,16 @@ func (ps *Persister) Copy() *Persister {
     return np
 }
 
+// raft peer -> encode -> []byte
+// []byte -> persister
 func (ps *Persister) SaveRaftState(state []byte) {
     ps.mu.Lock()
     defer ps.mu.Unlock()
     ps.raftstate = clone(state)
 }
 
+// persister -> []byte
+// []byte -> decode -> raft peer
 func (ps *Persister) ReadRaftState() []byte {
     ps.mu.Lock()
     defer ps.mu.Unlock()
@@ -89,6 +97,7 @@ func (ps *Persister) SnapshotSize() int {
 // where it can later be retrieved after a crash and restart.
 // see paper's Figure 2 for a description of what should be persistent.
 //
+// raft peer -> encode -> []byte -> persister
 func (rf *Raft) persist() {
     // Your code here (2C).
     // Example:
@@ -98,11 +107,19 @@ func (rf *Raft) persist() {
     // e.Encode(rf.yyy)
     // data := w.Bytes()
     // rf.persister.SaveRaftState(data)
+    w := new(bytes.Buffer)
+    e := labgob.NewEncoder(w)
+    e.Encode(rf.currentTerm)
+    e.Encode(rf.votedFor)
+    e.Encode(rf.log)
+    raftState := w.Bytes()
+    rf.persister.SaveRaftState(raftState)
 }
 
 //
 // restore previously persisted state.
 //
+// []byte -> raft peer
 func (rf *Raft) readPersist(data []byte) {
     if data == nil || len(data) < 1 { // bootstrap without any state?
         return
@@ -120,7 +137,19 @@ func (rf *Raft) readPersist(data []byte) {
     //   rf.xxx = xxx
     //   rf.yyy = yyy
     // }
+    var currentTerm int
+    var votedFor int
+    var log []LogEntry
 
+    r := bytes.NewBuffer(data)
+    d := labgob.NewDecoder(r)
+
+    d.Decode(&currentTerm)
+    rf.currentTerm = currentTerm
+    d.Decode(&votedFor)
+    rf.votedFor = votedFor
+    d.Decode(&log)
+    rf.log = log
 }
 
 //

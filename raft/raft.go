@@ -110,6 +110,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
         CommandValid: true,
     })
 
+    rf.persist()
+
     return len(rf.log) - 1, rf.currentTerm, true
 }
 
@@ -128,7 +130,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) Kill() {
     atomic.StoreInt32(&rf.dead, 1)
     // Stop the election ticker when killed
-
 }
 
 func (rf *Raft) killed() bool {
@@ -200,8 +201,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
     }()
 
     // initialize from state persisted before a crash
-    rf.readPersist(persister.ReadRaftState())
-
+    rf.readPersist(rf.persister.ReadRaftState())
     return rf
 }
 
@@ -215,6 +215,8 @@ func (rf *Raft) maybeUpdateTerm(term int) bool {
         if rf.serverState != Follower {
             rf.changeToFollower(rf.serverState)
         }
+
+        rf.persist()
 
         return true
     }

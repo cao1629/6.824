@@ -61,7 +61,6 @@ func NewLogApplier(applyCh chan ApplyMsg) *LogApplier {
 }
 
 func (logApplier *LogApplier) Apply() {
-
     for i := logApplier.rf.lastApplied + 1; i <= logApplier.rf.commitIndex; i++ {
         logApplier.applyCh <- ApplyMsg{
             CommandValid: true,

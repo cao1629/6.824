@@ -33,6 +33,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
     // 我可能是leader或者candidate with a smaller term
     if didUpdate := rf.maybeUpdateTerm(args.Term); didUpdate {
+        // currentTerm has been updated
+        rf.persist()
+
         // 我现在从一个leader或者candidate变成follower了
         // 我要说明我变成了谁的follower 所以我要更新voteFor
         rf.votedFor = args.LeaderId
@@ -92,9 +95,13 @@ func (rf *Raft) InitiateAppendEntries() {
             rf.sendAppendEntries(peerIdx, &args, &reply)
 
             if didUpdate := rf.maybeUpdateTerm(args.Term); didUpdate {
+
                 // 我现在从leader变成follower了
                 // 我要说明我变成了谁的follower 所以我要更新voteFor
                 rf.votedFor = args.LeaderId
+
+                // currentTerm, votedFor have been updated
+                rf.persist()
 
                 // 现在我不再是leader了 所以我也不用处理reply了
                 return

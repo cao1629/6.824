@@ -46,10 +46,15 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
     // 我是follower with a smaller term 我现在的voteFor是一个leader with a smaller term  或者voteFor是-1
     // 如果我确实update term了 那么现在我一定vote for 这个candidate with a higher term
     if didUpdate := rf.maybeUpdateTerm(args.Term); didUpdate {
+
         if upToDateCandidate {
             rf.votedFor = args.CandidateId
             reply.VoteGranted = true
         }
+
+        // currentTerm has been updated
+        // votedFor has probably been updated
+        rf.persist()
         return
     }
 
@@ -123,6 +128,7 @@ func (rf *Raft) isContextLost(term int) bool {
 func (rf *Raft) InitiateElection() {
     rf.currentTerm++
     rf.changeToCandidate()
+    rf.persist()
 
     votes := 1
     for i := range rf.peers {
@@ -156,6 +162,8 @@ func (rf *Raft) askForVote(peer int) bool {
     }
 
     if didUpdate := rf.maybeUpdateTerm(reply.Term); didUpdate {
+        // currentTerm has been updated
+        rf.persist()
         return false
     }
 
@@ -166,6 +174,7 @@ func (rf *Raft) askForVote(peer int) bool {
 func (rf *Raft) isCandidateLogUpToDate(candidateLastLogIndex, candidateLastLogTerm int) bool {
     myLastLogIndex := len(rf.log) - 1
     myLastLogTerm := rf.log[myLastLogIndex].Term
+
     if candidateLastLogTerm > myLastLogTerm {
         return true
     } else if candidateLastLogTerm < myLastLogTerm {
