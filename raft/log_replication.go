@@ -28,6 +28,8 @@ type AppendEntriesReply struct {
 // I could be a leader, candidate, or follower.
 // Now I receive an AppendEntries RPC from a self-claimed leader.
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
 
     reply.Term = rf.currentTerm
     reply.Success = false
@@ -88,6 +90,9 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // sync
 // Now I'm a leader. I'm sending AppendEntries RPC to one peer.
 func (rf *Raft) AppendEntriesTo(peer int) {
+
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
     slog.Info("AppendEntriesTo", "me", rf.me, "to", peer, "term", rf.currentTerm, "log.len", len(rf.log), "nextIndex", rf.nextIndex[peer])
 
     args := AppendEntriesArgs{

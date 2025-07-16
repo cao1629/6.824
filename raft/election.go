@@ -158,7 +158,6 @@ func (rf *Raft) StartElection() {
 
         peer := i
         go func() {
-            // Before sending RequestVote RPC, there is a chance that I'm no longer a candidate.
             slog.Info("RequestVoteFrom", "me", rf.me, "from", peer, "term", rf.currentTerm)
             voteGranted := rf.RequestVoteFrom(peer)
             voteGrantedCh <- voteGranted
