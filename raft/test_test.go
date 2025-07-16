@@ -46,7 +46,7 @@ func TestInitialElection2A(t *testing.T) {
 
     // there should still be a leader.
     cfg.checkOneLeader()
-
+    time.Sleep(50 * time.Second)
     cfg.end()
 }
 

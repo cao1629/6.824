@@ -24,9 +24,9 @@ import "time"
 import "fmt"
 
 const (
-    electionTimeoutMin time.Duration = 250 * time.Millisecond
-    electionTimeoutMax time.Duration = 400 * time.Millisecond
-    heartbeatInterval  time.Duration = 60 * time.Millisecond
+    electionTimeoutMin time.Duration = 2 * time.Second // 250*time.Ms
+    electionTimeoutMax time.Duration = 4 * time.Second // 400 *time.Ms
+    heartbeatInterval  time.Duration = 1 * time.Second // 60 * time.Ms
 )
 
 func generateRandomTimeout() time.Duration {

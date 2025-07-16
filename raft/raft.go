@@ -18,6 +18,7 @@ package raft
 //
 
 import (
+    "log/slog"
     //	"bytes"
     "sync"
     "sync/atomic"
@@ -51,7 +52,11 @@ type Raft struct {
     // state a Raft server must maintain.
 
     currentTerm int
-    votedFor    int // -1 means no vote
+
+    // in the current term, I voted for whom.
+    // -1 means no vote
+    votedFor int
+
     serverState ServerState
 
     // log
@@ -61,6 +66,10 @@ type Raft struct {
 
     commitIndex int
     lastApplied int
+
+    // two tickers
+    heartbeatTicker *time.Ticker
+    electionTicker  *time.Ticker
 
     // Control channels
     // 从candidate变成了leader
@@ -78,10 +87,8 @@ type Raft struct {
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
-    var term int
-    var isleader bool
-    // Your code here (2A).
-    return term, isleader
+
+    return rf.currentTerm, rf.serverState == Leader
 }
 
 //
@@ -150,71 +157,78 @@ func (rf *Raft) killed() bool {
 //
 func Make(peers []*labrpc.ClientEnd, me int,
     persister *Persister, applyCh chan ApplyMsg) *Raft {
+
+    slog.Info("Make", "server", me, "peers_count", len(peers))
+
     rf := &Raft{}
     rf.peers = peers
     rf.persister = persister
     rf.me = me
 
+    rf.serverState = Follower
+    rf.electionTicker = time.NewTicker(generateRandomTimeout())
+    rf.heartbeatTicker = time.NewTicker(heartbeatInterval)
+    rf.heartbeatTicker.Stop()
+
     rf.nextIndex = make([]int, len(peers))
     rf.matchIndex = make([]int, len(peers))
+
+    rf.log = make([]LogEntry, 1)
 
     rf.applyCh = applyCh
     rf.logApplier = NewLogApplier(applyCh)
 
     // Your initialization code here (2A, 2B, 2C).
     go func() {
-        // heartbeatTicker在leader时运行
-        heartbeatTicker := time.NewTicker(heartbeatInterval)
-        defer heartbeatTicker.Stop()
-
-        // electionTicker在follower和candidate时运行
-        electionTicker := time.NewTicker(generateRandomTimeout())
-        defer electionTicker.Stop()
+        slog.Info("Raft server started", "server", me)
 
         for {
             select {
-            case <-heartbeatTicker.C:
-                go rf.InitiateElection()
-            case <-electionTicker.C:
-                go rf.InitiateAppendEntries()
-            case <-rf.electedCh:
-                // 在rf.InitiateElection中会 rf.electedCh <- struct{}{}
-                // 现在我从candidate变成了leader了
-                electionTicker.Stop()
-                heartbeatTicker = time.NewTicker(heartbeatInterval)
-            case previousServerState := <-rf.becomeFollowerCh:
-                // 在maybeUpdateTerm中会 rf.becomeFollowerCh <- struct{}{}
+            case <-rf.heartbeatTicker.C:
+                // How do I make sure that this ticker ticks only when I am a leader?
+                // Once I'm not a leader, I stop this ticker atomically.
+                slog.Info("Heartbeat ticks", "server", me, "term", rf.currentTerm, "state", rf.serverState)
+                rf.AppendEntriesToOthers()
 
-                // 如果是从candidate变成follower 本来heartbeatTicker就已经停掉了
-                if previousServerState == Leader {
-                    heartbeatTicker.Stop()
-                }
+            case <-rf.electionTicker.C:
+                // How to make sure that I am not a leader when receiving this tick?
+                // equivalent to: after I become a leader, I stop the election ticker atomically
+                slog.Info("Election ticks", "server", me, "term", rf.currentTerm, "state", rf.serverState)
+                go rf.StartElection()
 
-                electionTicker = time.NewTicker(generateRandomTimeout())
-            case <-rf.resetTimeoutCh:
-                // follower收到leader的heartbeat就reset electionTicker
-                electionTicker.Reset(generateRandomTimeout())
             case <-rf.killCh:
+                slog.Info("Raft server ticker goroutine shutting down", "struct", "Raft", "method", "Make", "server", me)
                 return
             }
         }
     }()
 
     // initialize from state persisted before a crash
+    slog.Info("Reading persisted state", "struct", "Raft", "method", "Make", "server", me)
     rf.readPersist(rf.persister.ReadRaftState())
+
+    slog.Info("Raft server initialization complete", "struct", "Raft", "method", "Make", "server", me, "term", rf.currentTerm, "state", rf.serverState)
     return rf
 }
 
-// When a server learns of a higher term, it should update its term.
-// A server state change may happen.
-// Returns true if the term was updated, false otherwise.
-func (rf *Raft) maybeUpdateTerm(term int) bool {
+// non-thread-safe
+// I could be a leader, a candidate, or a follower.
+// If I learn a higher term, I update my term. If I'm not a follower, I become a follower.
+// If I'm currently a leader, I stop my heartbeat ticker.
+// If I'm currently a candidate, I reset the election ticker.
+func (rf *Raft) mayUpdateTerm(term int) bool {
+
     if term > rf.currentTerm {
         rf.currentTerm = term
 
-        if rf.serverState != Follower {
-            rf.changeToFollower(rf.serverState)
+        if rf.serverState == Leader {
+            rf.heartbeatTicker.Stop()
+        } else if rf.serverState == Candidate {
+            rf.electionTicker.Reset(generateRandomTimeout())
         }
+
+        rf.serverState = Follower
+        rf.votedFor = -1
 
         rf.persist()
 
@@ -222,3 +236,11 @@ func (rf *Raft) maybeUpdateTerm(term int) bool {
     }
     return false
 }
+
+type ServerState int
+
+const (
+    Leader    ServerState = iota // 0
+    Follower                     // 1
+    Candidate                    // 2
+)
