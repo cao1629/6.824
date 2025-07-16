@@ -32,6 +32,8 @@ type RequestVoteReply struct {
 // I could be a leader, candidate, or a follower.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
     // Your code here (2A, 2B).
+    slog.Info("Received RequestVote RPC",
+        "me", rf.me, "my term", rf.currentTerm, "candidate", args.CandidateId, "candidate's term", args.Term)
 
     reply.Term = rf.currentTerm
     reply.VoteGranted = false
@@ -140,22 +142,27 @@ func (rf *Raft) StartElection() {
     rf.serverState = Candidate
     rf.votedFor = rf.me
     rf.persist()
+    rf.electionTicker.Reset(generateRandomTimeout())
     electionTerm := rf.currentTerm
     rf.mu.Unlock()
 
-    slog.Info("StartElection", "server", rf.me, "term", rf.currentTerm)
+    slog.Info("Start Election", "server", rf.me, "term", rf.currentTerm, "state", rf.serverState)
 
     voteGrantedCh := make(chan bool)
 
     // send RequestVote RPCs to all the other peers concurrently
-    for peer := range rf.peers {
-        if peer == rf.me {
+    for i := range rf.peers {
+        if i == rf.me {
             continue
         }
 
+        peer := i
         go func() {
             // Before sending RequestVote RPC, there is a chance that I'm no longer a candidate.
-            voteGrantedCh <- rf.RequestVoteFrom(peer)
+            slog.Info("RequestVoteFrom", "me", rf.me, "from", peer, "term", rf.currentTerm)
+            voteGranted := rf.RequestVoteFrom(peer)
+            voteGrantedCh <- voteGranted
+            slog.Info("Reply of RequestVoteFrom", "me", rf.me, "from", peer, "term", rf.currentTerm, "vote_granted", voteGranted)
         }()
     }
 
@@ -181,7 +188,12 @@ func (rf *Raft) StartElection() {
                         // I have enough votes to become a leader.
                         // Stop the election ticker and start the heartbeat ticker.
                         // Break this "for select loop" to ignore the remaining votes.
+                        slog.Info("Election won", "server", rf.me, "term", rf.currentTerm, "votes", votes)
                         rf.serverState = Leader
+                        for i := range rf.peers {
+                            rf.nextIndex[i] = len(rf.log)
+                            rf.matchIndex[i] = 0
+                        }
                         rf.electionTicker.Stop()
                         rf.heartbeatTicker.Reset(heartbeatInterval)
                     }
@@ -197,10 +209,10 @@ func (rf *Raft) StartElection() {
 // sync
 // If the peer grants my vote, return true. Otherwise return false.
 func (rf *Raft) RequestVoteFrom(peer int) bool {
+
     rf.mu.Lock()
     defer rf.mu.Unlock()
 
-    slog.Info("Requesting vote from peer", "server", rf.me, "peer", peer, "term", rf.currentTerm)
     args := RequestVoteArgs{
         Term:         rf.currentTerm,
         CandidateId:  rf.me,

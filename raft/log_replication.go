@@ -1,6 +1,9 @@
 package raft
 
-import "sort"
+import (
+    "log/slog"
+    "sort"
+)
 
 type LogEntry struct {
     Term         int
@@ -32,6 +35,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // I received a message from someone with a smaller term.
     // Ignore this message, send back my current term and false.
     if args.Term < rf.currentTerm {
+        slog.Info("receiver of AppendEntries: ignore messages with a smaller term", "me", rf.me, "my_term", rf.currentTerm, "sender_term", args.Term)
         return
     }
 
@@ -49,16 +53,20 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // Check if log matches.
     // (a) my log is shorter than the leader's log
     if args.PrevLogIndex >= len(rf.log) {
+        slog.Info("AppendEntries: my log is shorter than the leader's log", "me", rf.me, "leader", args.LeaderId)
         return
     }
 
     // (b) term does not match
     if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+        slog.Info("AppendEntries: term does not match", "me", rf.me, "leader", args.LeaderId)
         return
     }
 
     // Append entries to my log.
-    rf.log = append(rf.log[:args.PrevLogIndex+1], args.Entries...)
+    if len(args.Entries) == 0 {
+        rf.log = append(rf.log[:args.PrevLogIndex+1], args.Entries...)
+    }
 
     // Success
     reply.Success = true
@@ -69,7 +77,7 @@ func (rf *Raft) findCommitIndex() int {
     copy(tmpMatchIndex, rf.matchIndex)
     sort.Ints(tmpMatchIndex)
     // index是:0 1 2 3 4 5  中位数的索引是(len-1)/2
-    return tmpMatchIndex[len(tmpMatchIndex)-1/2]
+    return tmpMatchIndex[(len(tmpMatchIndex)-1)/2]
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
@@ -80,6 +88,8 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // sync
 // Now I'm a leader. I'm sending AppendEntries RPC to one peer.
 func (rf *Raft) AppendEntriesTo(peer int) {
+    slog.Info("AppendEntriesTo", "me", rf.me, "to", peer, "term", rf.currentTerm, "log.len", len(rf.log), "nextIndex", rf.nextIndex[peer])
+
     args := AppendEntriesArgs{
         Term:         rf.currentTerm,
         LeaderId:     rf.me,
@@ -107,11 +117,19 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     // (b) I'm a leader. The other peer's log is not shorter than mine, but its log at prevLogIndex has a different term than prevLogTerm.
     // I need to decrease nextIndex for this peer.
     if !reply.Success {
-        rf.nextIndex[peer]--
+        slog.Info("reply.Success is false")
+        if rf.nextIndex[peer] != len(rf.log) {
+            rf.nextIndex[peer]--
+        }
+
         return
     }
 
     // reply.Success is true, which means replication to the other peer is successful.
+    if rf.nextIndex[peer] == len(rf.log) {
+        return
+    }
+
     rf.nextIndex[peer]++
     rf.matchIndex[peer] = args.PrevLogIndex + len(args.Entries) - 1
     newCommitIndex := rf.findCommitIndex()
@@ -123,7 +141,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
 
 // Now I'm a leader. I'm sending AppendEntries RPC to all other peers concurently.
 func (rf *Raft) AppendEntriesToOthers() {
-
+    slog.Info("AppendEntriesToOthers", "leader", rf.me, "term", rf.currentTerm, "state", rf.serverState)
     for peer := range rf.peers {
         if peer == rf.me {
             continue

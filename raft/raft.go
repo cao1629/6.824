@@ -71,14 +71,7 @@ type Raft struct {
     heartbeatTicker *time.Ticker
     electionTicker  *time.Ticker
 
-    // Control channels
-    // 从candidate变成了leader
-    electedCh chan struct{}
-
-    // 可以从leader变成follower 也可以从candidate变成follower
-    becomeFollowerCh chan ServerState
-    killCh           chan struct{}
-    resetTimeoutCh   chan struct{}
+    killCh chan struct{}
 
     applyCh    chan ApplyMsg
     logApplier *LogApplier
@@ -164,6 +157,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
     rf.peers = peers
     rf.persister = persister
     rf.me = me
+    rf.currentTerm = 1
 
     rf.serverState = Follower
     rf.electionTicker = time.NewTicker(generateRandomTimeout())
@@ -173,27 +167,25 @@ func Make(peers []*labrpc.ClientEnd, me int,
     rf.nextIndex = make([]int, len(peers))
     rf.matchIndex = make([]int, len(peers))
 
-    rf.log = make([]LogEntry, 1)
+    rf.log = []LogEntry{
+        {0, 0, false},
+    }
 
     rf.applyCh = applyCh
     rf.logApplier = NewLogApplier(applyCh)
 
     // Your initialization code here (2A, 2B, 2C).
     go func() {
-        slog.Info("Raft server started", "server", me)
-
         for {
             select {
             case <-rf.heartbeatTicker.C:
                 // How do I make sure that this ticker ticks only when I am a leader?
                 // Once I'm not a leader, I stop this ticker atomically.
-                slog.Info("Heartbeat ticks", "server", me, "term", rf.currentTerm, "state", rf.serverState)
                 rf.AppendEntriesToOthers()
 
             case <-rf.electionTicker.C:
                 // How to make sure that I am not a leader when receiving this tick?
                 // equivalent to: after I become a leader, I stop the election ticker atomically
-                slog.Info("Election ticks", "server", me, "term", rf.currentTerm, "state", rf.serverState)
                 go rf.StartElection()
 
             case <-rf.killCh:
@@ -227,6 +219,7 @@ func (rf *Raft) mayUpdateTerm(term int) bool {
             rf.electionTicker.Reset(generateRandomTimeout())
         }
 
+        slog.Info("Become a follower", "me", rf.me, "term", rf.currentTerm, "state", rf.serverState)
         rf.serverState = Follower
         rf.votedFor = -1
 
@@ -237,10 +230,10 @@ func (rf *Raft) mayUpdateTerm(term int) bool {
     return false
 }
 
-type ServerState int
+type ServerState string
 
 const (
-    Leader    ServerState = iota // 0
-    Follower                     // 1
-    Candidate                    // 2
+    Leader    ServerState = "leader"
+    Follower  ServerState = "follower"  // 1
+    Candidate ServerState = "candidate" // 2
 )
