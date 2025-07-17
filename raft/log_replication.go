@@ -92,7 +92,9 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 func (rf *Raft) AppendEntriesTo(peer int) {
 
     rf.mu.Lock()
-    defer rf.mu.Unlock()
+    expectedTerm := rf.currentTerm
+    rf.mu.Unlock()
+
     slog.Info("AppendEntriesTo", "me", rf.me, "to", peer, "term", rf.currentTerm, "log.len", len(rf.log), "nextIndex", rf.nextIndex[peer])
 
     args := AppendEntriesArgs{
@@ -107,9 +109,18 @@ func (rf *Raft) AppendEntriesTo(peer int) {
 
     rf.sendAppendEntries(peer, &args, &reply)
 
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
+
     if didUpdateTerm := rf.mayUpdateTerm(reply.Term); didUpdateTerm {
         // I don't need to handle the reply anymore. Since I learned a higher term, and became a follower.
         // The RequestVote RPC I sent when I was a leader was meaningless.
+        return
+    }
+
+    // I expect myself to be a leader here. However, it is possible that I am not a leader anymore.
+    // how come? received a higher term from another peer.
+    if rf.isContextLost(Leader, expectedTerm) {
         return
     }
 
@@ -126,7 +137,6 @@ func (rf *Raft) AppendEntriesTo(peer int) {
         if rf.nextIndex[peer] != len(rf.log) {
             rf.nextIndex[peer]--
         }
-
         return
     }
 
@@ -152,6 +162,5 @@ func (rf *Raft) AppendEntriesToOthers() {
             continue
         }
         go rf.AppendEntriesTo(peer)
-
     }
 }

@@ -31,6 +31,9 @@ type RequestVoteReply struct {
 // I receive a RequestVote RPC from a candidate.
 // I could be a leader, candidate, or a follower.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
+
     // Your code here (2A, 2B).
     slog.Info("Received RequestVote RPC",
         "me", rf.me, "my term", rf.currentTerm, "candidate", args.CandidateId, "candidate's term", args.Term)
@@ -113,29 +116,18 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 }
 
 // non-thread-safe
-func (rf *Raft) isContextLost(term int) bool {
+func (rf *Raft) isContextLost(expectedSeverState ServerState, term int) bool {
     if rf.currentTerm > term {
         return true
     }
 
-    if rf.serverState != Candidate {
+    if rf.serverState != expectedSeverState {
         return true
     }
 
     return false
 }
 
-// StartElection is running concurrently. There is a chance that the server loses the context. (no longer a candidate, a new term)
-//
-// no longer a candidate, and a new term
-// 1. become a leader: an election with a higher term won the election
-// 2. become a follower: a heartbeat from a leader with a higher term
-//
-// no longer a candidate, but the term is still the same
-// 1. become a follower: send RequestVote RPCs to a leader with the same term
-// 2. become a leader: this candidate has already received enough votes to become a leader. It does not need to process
-// more votes from other servers with the same term.
-//
 func (rf *Raft) StartElection() {
     rf.mu.Lock()
     rf.currentTerm++
@@ -174,7 +166,10 @@ func (rf *Raft) StartElection() {
             select {
             case voteGranted := <-voteGrantedCh:
                 rf.mu.Lock()
-                if rf.isContextLost(electionTerm) {
+                // At this point, I expect myself to be a candidate. However, I may have become a follower or leader.
+                // 1. If I have become a follower, which means I have learned a higher term, then I should stop the election.
+                // 2. If I have become a leader, which means I have received enough votes. But this case seems never to happen.
+                if rf.isContextLost(Candidate, electionTerm) {
                     // This round of election is no longer valid.
                     rf.mu.Unlock()
                     break
@@ -195,14 +190,15 @@ func (rf *Raft) StartElection() {
                         }
                         rf.electionTicker.Stop()
                         rf.heartbeatTicker.Reset(heartbeatInterval)
+
+                        // I've received enough votes and become a leader. Terminate this goroutine to ignore the remaining votes.
+                        break
                     }
                 }
-
                 rf.mu.Unlock()
             }
         }
     }()
-
 }
 
 // sync
@@ -233,7 +229,7 @@ func (rf *Raft) RequestVoteFrom(peer int) bool {
 }
 
 // I'm the receiver of the RequestVote RPC.
-// I check if the candidate is an eligible candidate.
+// I want to check if the candidate is an eligible candidate.
 func (rf *Raft) isCandidateLogUpToDate(candidateLastLogIndex, candidateLastLogTerm int) bool {
     myLastLogIndex := len(rf.log) - 1
     myLastLogTerm := rf.log[myLastLogIndex].Term

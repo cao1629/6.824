@@ -8,7 +8,10 @@ package raft
 // test with the original before submitting.
 //
 
-import "testing"
+import (
+    "os"
+    "testing"
+)
 import "fmt"
 import "time"
 import "math/rand"
@@ -67,6 +70,9 @@ func TestReElection2A(t *testing.T) {
     // should switch to follower.
     cfg.connect(leader1)
     leader2 := cfg.checkOneLeader()
+
+    time.Sleep(10 * time.Second)
+    os.Exit(1)
 
     // if there's o quorum, no new leader should  be elected.
     cfg.disconnect(leader2)

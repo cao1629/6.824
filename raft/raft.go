@@ -80,7 +80,6 @@ type Raft struct {
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
-
     return rf.currentTerm, rf.serverState == Leader
 }
 
@@ -111,7 +110,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
     })
 
     rf.persist()
-
     return len(rf.log) - 1, rf.currentTerm, true
 }
 
@@ -179,16 +177,14 @@ func Make(peers []*labrpc.ClientEnd, me int,
         for {
             select {
             case <-rf.heartbeatTicker.C:
-                // How do I make sure that this ticker ticks only when I am a leader?
-                // Once I'm not a leader, I stop this ticker atomically.
                 rf.AppendEntriesToOthers()
 
             case <-rf.electionTicker.C:
-                // How to make sure that I am not a leader when receiving this tick?
-                // equivalent to: after I become a leader, I stop the election ticker atomically
                 go rf.StartElection()
 
             case <-rf.killCh:
+                rf.heartbeatTicker.Stop()
+                rf.electionTicker.Stop()
                 slog.Info("Raft server ticker goroutine shutting down", "struct", "Raft", "method", "Make", "server", me)
                 return
             }
@@ -224,7 +220,6 @@ func (rf *Raft) mayUpdateTerm(term int) bool {
         rf.votedFor = -1
 
         rf.persist()
-
         return true
     }
     return false
@@ -234,6 +229,6 @@ type ServerState string
 
 const (
     Leader    ServerState = "leader"
-    Follower  ServerState = "follower"  // 1
-    Candidate ServerState = "candidate" // 2
+    Follower  ServerState = "follower"
+    Candidate ServerState = "candidate"
 )
