@@ -23,10 +23,16 @@ import "encoding/base64"
 import "time"
 import "fmt"
 
+//const (
+//    electionTimeoutMin time.Duration = 3 * time.Second // 250*time.Ms
+//    electionTimeoutMax time.Duration = 6 * time.Second // 400 *time.Ms
+//    heartbeatInterval  time.Duration = 2 * time.Second // 60 * time.Ms
+//)
+
 const (
-    electionTimeoutMin time.Duration = 2 * time.Second // 250*time.Ms
-    electionTimeoutMax time.Duration = 4 * time.Second // 400 *time.Ms
-    heartbeatInterval  time.Duration = 1 * time.Second // 60 * time.Ms
+    electionTimeoutMin time.Duration = 250 * time.Millisecond // 250*time.Ms
+    electionTimeoutMax time.Duration = 400 * time.Millisecond // 400 *time.Ms
+    heartbeatInterval  time.Duration = 60 * time.Millisecond  // 60 * time.Ms
 )
 
 func generateRandomTimeout() time.Duration {
@@ -478,6 +484,7 @@ func (cfg *config) checkTerms() int {
     for i := 0; i < cfg.n; i++ {
         if cfg.connected[i] {
             xterm, _ := cfg.rafts[i].GetState()
+            LOG(dDebug, "checkTerms, S%d: term %d", i, xterm)
             if term == -1 {
                 term = xterm
             } else if term != xterm {

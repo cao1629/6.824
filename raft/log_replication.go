@@ -30,6 +30,8 @@ type AppendEntriesReply struct {
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
     rf.mu.Lock()
     defer rf.mu.Unlock()
+    defer rf.electionTicker.Reset(generateRandomTimeout())
+    defer LOG(dLog, "S%d, Term: %d, Reply AppendEntries from S%d, Success: %t", rf.me, rf.currentTerm, args.LeaderId, reply.Success)
 
     reply.Term = rf.currentTerm
     reply.Success = false
@@ -37,11 +39,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // I received a message from someone with a smaller term.
     // Ignore this message, send back my current term and false.
     if args.Term < rf.currentTerm {
-        slog.Info("receiver of AppendEntries: ignore messages with a smaller term", "me", rf.me, "my_term", rf.currentTerm, "sender_term", args.Term)
+        LOG(dLog, "S%d: 1", rf.me)
         return
     }
 
-    if didUpdateTerm := rf.mayUpdateTerm(args.Term); !didUpdateTerm {
+    if didUpdateTerm := rf.mayUpdateTerm(args.Term, args.LeaderId); !didUpdateTerm {
         // I received an AppendEntries RPC from someone with the same term.
         // What if I'm a candidate and I receive an AppendEntries RPC from a leader with the same term?
         // I should become a follower, reset my votedFor, and reset my election timer.
@@ -55,13 +57,13 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // Check if log matches.
     // (a) my log is shorter than the leader's log
     if args.PrevLogIndex >= len(rf.log) {
-        slog.Info("AppendEntries: my log is shorter than the leader's log", "me", rf.me, "leader", args.LeaderId)
+        LOG(dLog, "S%d: 2", rf.me)
         return
     }
 
     // (b) term does not match
     if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
-        slog.Info("AppendEntries: term does not match", "me", rf.me, "leader", args.LeaderId)
+        LOG(dLog, "S%d: 3", rf.me)
         return
     }
 
@@ -72,6 +74,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
     // Success
     reply.Success = true
+
 }
 
 func (rf *Raft) findCommitIndex() int {
@@ -93,9 +96,9 @@ func (rf *Raft) AppendEntriesTo(peer int) {
 
     rf.mu.Lock()
     expectedTerm := rf.currentTerm
-    rf.mu.Unlock()
 
-    slog.Info("AppendEntriesTo", "me", rf.me, "to", peer, "term", rf.currentTerm, "log.len", len(rf.log), "nextIndex", rf.nextIndex[peer])
+    LOG(dHeartbeat, "S%d, Starting Append Entries to S%d, Term: %d, Log Length: %d, PrevLogIndex: %d, NextIndex: %d, EntriesToSend: %v",
+        rf.me, peer, rf.currentTerm, len(rf.log), rf.nextIndex[peer]-1, rf.nextIndex[peer], rf.getEntriesToSend(peer))
 
     args := AppendEntriesArgs{
         Term:         rf.currentTerm,
@@ -105,6 +108,8 @@ func (rf *Raft) AppendEntriesTo(peer int) {
         Entries:      rf.log[rf.nextIndex[peer]:],
     }
 
+    rf.mu.Unlock()
+
     reply := AppendEntriesReply{}
 
     rf.sendAppendEntries(peer, &args, &reply)
@@ -112,7 +117,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     rf.mu.Lock()
     defer rf.mu.Unlock()
 
-    if didUpdateTerm := rf.mayUpdateTerm(reply.Term); didUpdateTerm {
+    if didUpdateTerm := rf.mayUpdateTerm(reply.Term, peer); didUpdateTerm {
         // I don't need to handle the reply anymore. Since I learned a higher term, and became a follower.
         // The RequestVote RPC I sent when I was a leader was meaningless.
         return
@@ -133,10 +138,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     // (b) I'm a leader. The other peer's log is not shorter than mine, but its log at prevLogIndex has a different term than prevLogTerm.
     // I need to decrease nextIndex for this peer.
     if !reply.Success {
-        slog.Info("reply.Success is false")
-        if rf.nextIndex[peer] != len(rf.log) {
-            rf.nextIndex[peer]--
-        }
+        rf.nextIndex[peer]--
         return
     }
 

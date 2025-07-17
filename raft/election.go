@@ -1,7 +1,5 @@
 package raft
 
-import "log/slog"
-
 //
 // example RequestVote RPC arguments structure.
 // field names must start with capital letters!
@@ -31,12 +29,13 @@ type RequestVoteReply struct {
 // I receive a RequestVote RPC from a candidate.
 // I could be a leader, candidate, or a follower.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+    LOG(dDebug, "S%d, Term: %d, Starting processing RequestVote from S%d", rf.me, rf.currentTerm, args.CandidateId)
     rf.mu.Lock()
+    defer LOG(dDebug, "S%d, Term: %d, Finished processing RequestVote from S%d", rf.me, rf.currentTerm, args.CandidateId)
     defer rf.mu.Unlock()
 
     // Your code here (2A, 2B).
-    slog.Info("Received RequestVote RPC",
-        "me", rf.me, "my term", rf.currentTerm, "candidate", args.CandidateId, "candidate's term", args.Term)
+    LOG(dElection, "S%d, Term: %d, Voting for S%d", rf.me, rf.currentTerm, args.CandidateId)
 
     reply.Term = rf.currentTerm
     reply.VoteGranted = false
@@ -58,7 +57,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
     // 2. If I'm currently a follower with a smaller term. I've probably voted for someone in this term.
     // I probably haven't voted for anyone.
     // In this case I just need to update my term, and vote for this candidate.
-    if didUpdateTerm := rf.mayUpdateTerm(args.Term); didUpdateTerm {
+    if didUpdateTerm := rf.mayUpdateTerm(args.Term, args.CandidateId); didUpdateTerm {
         if upToDateCandidate {
             rf.votedFor = args.CandidateId
             reply.VoteGranted = true
@@ -130,15 +129,15 @@ func (rf *Raft) isContextLost(expectedSeverState ServerState, term int) bool {
 
 func (rf *Raft) StartElection() {
     rf.mu.Lock()
+    LOG(dTerm, "S%d, Term: %d -> %d, Reason: timeout", rf.me, rf.currentTerm, rf.currentTerm+1)
     rf.currentTerm++
+    LOG(dState, "S%d, Term: %d, State: %s -> %s, Reason: timeout", rf.me, rf.currentTerm, rf.serverState, Candidate)
     rf.serverState = Candidate
     rf.votedFor = rf.me
     rf.persist()
     rf.electionTicker.Reset(generateRandomTimeout())
     electionTerm := rf.currentTerm
     rf.mu.Unlock()
-
-    slog.Info("Start Election", "server", rf.me, "term", rf.currentTerm, "state", rf.serverState)
 
     voteGrantedCh := make(chan bool)
 
@@ -150,10 +149,10 @@ func (rf *Raft) StartElection() {
 
         peer := i
         go func() {
-            slog.Info("RequestVoteFrom", "me", rf.me, "from", peer, "term", rf.currentTerm)
+            LOG(dElection, "S%d, Term: %d, Request Vote From S%d", rf.me, rf.currentTerm, peer)
             voteGranted := rf.RequestVoteFrom(peer)
+            LOG(dElection, "S%d, Term: %d, Vote from S%d: %t", rf.me, rf.currentTerm, peer, voteGranted)
             voteGrantedCh <- voteGranted
-            slog.Info("Reply of RequestVoteFrom", "me", rf.me, "from", peer, "term", rf.currentTerm, "vote_granted", voteGranted)
         }()
     }
 
@@ -182,7 +181,8 @@ func (rf *Raft) StartElection() {
                         // I have enough votes to become a leader.
                         // Stop the election ticker and start the heartbeat ticker.
                         // Break this "for select loop" to ignore the remaining votes.
-                        slog.Info("Election won", "server", rf.me, "term", rf.currentTerm, "votes", votes)
+                        LOG(dElection, "S%d, Term: %d, Won election", rf.me, rf.currentTerm)
+                        LOG(dState, "S%d, Term: %d, State: %s -> %s", rf.me, rf.currentTerm, rf.serverState, Leader)
                         rf.serverState = Leader
                         for i := range rf.peers {
                             rf.nextIndex[i] = len(rf.log)
@@ -192,10 +192,12 @@ func (rf *Raft) StartElection() {
                         rf.heartbeatTicker.Reset(heartbeatInterval)
 
                         // I've received enough votes and become a leader. Terminate this goroutine to ignore the remaining votes.
+                        rf.mu.Unlock()
                         break
                     }
                 }
                 rf.mu.Unlock()
+
             }
         }
     }()
@@ -204,9 +206,6 @@ func (rf *Raft) StartElection() {
 // sync
 // If the peer grants my vote, return true. Otherwise return false.
 func (rf *Raft) RequestVoteFrom(peer int) bool {
-
-    rf.mu.Lock()
-    defer rf.mu.Unlock()
 
     args := RequestVoteArgs{
         Term:         rf.currentTerm,
@@ -220,14 +219,16 @@ func (rf *Raft) RequestVoteFrom(peer int) bool {
         return false
     }
 
-    if didUpdate := rf.mayUpdateTerm(reply.Term); didUpdate {
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
+    if didUpdate := rf.mayUpdateTerm(reply.Term, peer); didUpdate {
         return false
     }
 
-    slog.Info("Received vote reply", "server", rf.me, "peer", peer, "term", reply.Term, "vote_granted", reply.VoteGranted)
     return reply.VoteGranted
 }
 
+// non-thread-safe
 // I'm the receiver of the RequestVote RPC.
 // I want to check if the candidate is an eligible candidate.
 func (rf *Raft) isCandidateLogUpToDate(candidateLastLogIndex, candidateLastLogTerm int) bool {

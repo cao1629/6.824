@@ -149,7 +149,7 @@ func (rf *Raft) killed() bool {
 func Make(peers []*labrpc.ClientEnd, me int,
     persister *Persister, applyCh chan ApplyMsg) *Raft {
 
-    slog.Info("Make", "server", me, "peers_count", len(peers))
+    LOG(dInfo, "S%d, Starting...", me)
 
     rf := &Raft{}
     rf.peers = peers
@@ -192,10 +192,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
     }()
 
     // initialize from state persisted before a crash
-    slog.Info("Reading persisted state", "struct", "Raft", "method", "Make", "server", me)
+    //slog.Info("Reading persisted state", "struct", "Raft", "method", "Make", "server", me)
     rf.readPersist(rf.persister.ReadRaftState())
 
-    slog.Info("Raft server initialization complete", "struct", "Raft", "method", "Make", "server", me, "term", rf.currentTerm, "state", rf.serverState)
+    //slog.Info("Raft server initialization complete", "struct", "Raft", "method", "Make", "server", me, "term", rf.currentTerm, "state", rf.serverState)
     return rf
 }
 
@@ -204,18 +204,18 @@ func Make(peers []*labrpc.ClientEnd, me int,
 // If I learn a higher term, I update my term. If I'm not a follower, I become a follower.
 // If I'm currently a leader, I stop my heartbeat ticker.
 // If I'm currently a candidate, I reset the election ticker.
-func (rf *Raft) mayUpdateTerm(term int) bool {
+func (rf *Raft) mayUpdateTerm(term int, from int) bool {
 
     if term > rf.currentTerm {
+        LOG(dTerm, "S%d, Term: %d -> %d, Reason: learned a higher term from S%d", rf.me, rf.currentTerm, term, from)
         rf.currentTerm = term
 
         if rf.serverState == Leader {
             rf.heartbeatTicker.Stop()
-        } else if rf.serverState == Candidate {
-            rf.electionTicker.Reset(generateRandomTimeout())
         }
+        rf.electionTicker.Reset(generateRandomTimeout())
 
-        slog.Info("Become a follower", "me", rf.me, "term", rf.currentTerm, "state", rf.serverState)
+        LOG(dState, "S%d, Term: %d, State: %s -> %s, Reason: learned a higher term from S%d", rf.me, rf.currentTerm, rf.serverState, Follower, from)
         rf.serverState = Follower
         rf.votedFor = -1
 
@@ -223,6 +223,23 @@ func (rf *Raft) mayUpdateTerm(term int) bool {
         return true
     }
     return false
+}
+
+type EntryInfo struct {
+    index int
+    term  int
+}
+
+// non-thread-safe
+func (rf *Raft) getEntriesToSend(peer int) []EntryInfo {
+    entriesInfo := make([]EntryInfo, len(rf.log)-rf.nextIndex[peer])
+    for i := rf.nextIndex[peer]; i < len(rf.log); i++ {
+        entriesInfo[i-rf.nextIndex[peer]] = EntryInfo{
+            index: i,
+            term:  rf.log[i].Term,
+        }
+    }
+    return entriesInfo
 }
 
 type ServerState string
