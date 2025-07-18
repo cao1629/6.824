@@ -31,7 +31,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     rf.mu.Lock()
     defer rf.mu.Unlock()
     defer rf.electionTicker.Reset(generateRandomTimeout())
-    defer LOG(dLog, "S%d, Term: %d, Reply AppendEntries from S%d, Success: %t", rf.me, rf.currentTerm, args.LeaderId, reply.Success)
 
     reply.Term = rf.currentTerm
     reply.Success = false
@@ -39,7 +38,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // I received a message from someone with a smaller term.
     // Ignore this message, send back my current term and false.
     if args.Term < rf.currentTerm {
-        LOG(dLog, "S%d: 1", rf.me)
+        LOG(dLog, "S%d, Term: %d, Reply AppendEntries from S%d, Success: %t, Reason: ignore messages with smaller term",
+            rf.me, rf.currentTerm, args.LeaderId, reply.Success)
         return
     }
 
@@ -57,24 +57,27 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // Check if log matches.
     // (a) my log is shorter than the leader's log
     if args.PrevLogIndex >= len(rf.log) {
-        LOG(dLog, "S%d: 2", rf.me)
+        LOG(dLog, "S%d, Term: %d, Reply AppendEntries from S%d, Success: %t, Reason: my log is shorter than the leader's log",
+            rf.me, rf.currentTerm, args.LeaderId, reply.Success)
         return
     }
 
     // (b) term does not match
     if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
-        LOG(dLog, "S%d: 3", rf.me)
+        LOG(dLog, "S%d, Term: %d, Reply AppendEntries from S%d, Success: %t, Reason: term does not match",
+            rf.me, rf.currentTerm, args.LeaderId, reply.Success)
         return
     }
 
     // Append entries to my log.
-    if len(args.Entries) == 0 {
+    if len(args.Entries) != 0 {
+        LOG(dLog, "S%d, Term: %d, Append %d Entries to my log", rf.me, rf.currentTerm, len(args.Entries))
         rf.log = append(rf.log[:args.PrevLogIndex+1], args.Entries...)
     }
 
     // Success
     reply.Success = true
-
+    LOG(dLog, "S%d, Term: %d, Reply AppendEntries from S%d, Success: %t", rf.me, rf.currentTerm, args.LeaderId, reply.Success)
 }
 
 func (rf *Raft) findCommitIndex() int {

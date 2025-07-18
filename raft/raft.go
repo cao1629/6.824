@@ -99,7 +99,11 @@ func (rf *Raft) GetState() (int, bool) {
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
     // Your code here (2B).
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
+
     if rf.serverState != Leader {
+        LOG(dLog, "S%d, Term: %d, Start a command on a server which is not a leader", rf.me, rf.currentTerm)
         return 0, 0, false
     }
 
@@ -110,6 +114,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
     })
 
     rf.persist()
+
+    LOG(dLog, "S%d, Term: %d, Leader accept a new log entry", rf.me, rf.currentTerm)
     return len(rf.log) - 1, rf.currentTerm, true
 }
 

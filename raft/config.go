@@ -583,6 +583,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
     starts := 0
     for time.Since(t0).Seconds() < 10 && cfg.checkFinished() == false {
         // try all the servers, maybe one is the leader.
+        // index: we send the command to this server, which is a leader
         index := -1
         for si := 0; si < cfg.n; si++ {
             starts = (starts + 1) % cfg.n
@@ -594,7 +595,9 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
             cfg.mu.Unlock()
             if rf != nil {
                 index1, _, ok := rf.Start(cmd)
+                // if ok is false, this server is not the leader
                 if ok {
+                    LOG(dDebug, "Start, S%d", starts)
                     index = index1
                     break
                 }
@@ -623,9 +626,11 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
             time.Sleep(50 * time.Millisecond)
         }
     }
+
     if cfg.checkFinished() == false {
         cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
     }
+
     return -1
 }
 
