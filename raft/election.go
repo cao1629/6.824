@@ -35,7 +35,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
     defer rf.mu.Unlock()
 
     // Your code here (2A, 2B).
-    LOG(dElection, "S%d, Term: %d, Voting for S%d", rf.me, rf.currentTerm, args.CandidateId)
+    LOG(dVote, "S%d, Term: %d, Voting for S%d", rf.me, rf.currentTerm, args.CandidateId)
 
     reply.Term = rf.currentTerm
     reply.VoteGranted = false
@@ -129,7 +129,7 @@ func (rf *Raft) isContextLost(expectedSeverState ServerState, term int) bool {
 
 func (rf *Raft) StartElection() {
     rf.mu.Lock()
-    LOG(dTerm, "S%d, Term: %d -> %d, Reason: timeout", rf.me, rf.currentTerm, rf.currentTerm+1)
+    LOG(dState, "S%d, Term: %d -> %d, Reason: timeout", rf.me, rf.currentTerm, rf.currentTerm+1)
     rf.currentTerm++
     LOG(dState, "S%d, Term: %d, State: %s -> %s, Reason: timeout", rf.me, rf.currentTerm, rf.serverState, Candidate)
     rf.serverState = Candidate
@@ -186,7 +186,7 @@ func (rf *Raft) StartElection() {
                         rf.serverState = Leader
                         for i := range rf.peers {
                             rf.nextIndex[i] = len(rf.log)
-                            rf.matchIndex[i] = 0
+                            rf.matchIndex[i] = len(rf.log)
                         }
                         rf.electionTicker.Stop()
                         rf.heartbeatTicker.Reset(heartbeatInterval)
@@ -197,7 +197,6 @@ func (rf *Raft) StartElection() {
                     }
                 }
                 rf.mu.Unlock()
-
             }
         }
     }()

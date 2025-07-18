@@ -38,7 +38,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // I received a message from someone with a smaller term.
     // Ignore this message, send back my current term and false.
     if args.Term < rf.currentTerm {
-        LOG(dLog, "S%d, Term: %d, Reply AppendEntries from S%d, Success: %t, Reason: ignore messages with smaller term",
+        LOG(dLog2, "S%d, Term: %d, Reply AppendEntries from S%d, Success: %t, Reason: ignore messages with smaller term",
             rf.me, rf.currentTerm, args.LeaderId, reply.Success)
         return
     }
@@ -57,30 +57,43 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // Check if log matches.
     // (a) my log is shorter than the leader's log
     if args.PrevLogIndex >= len(rf.log) {
-        LOG(dLog, "S%d, Term: %d, Reply AppendEntries from S%d, Success: %t, Reason: my log is shorter than the leader's log",
+        LOG(dLog2, "S%d, Term: %d, Reply AppendEntries from S%d, Success: %t, Reason: my log is shorter than the leader's log",
             rf.me, rf.currentTerm, args.LeaderId, reply.Success)
         return
     }
 
     // (b) term does not match
     if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
-        LOG(dLog, "S%d, Term: %d, Reply AppendEntries from S%d, Success: %t, Reason: term does not match",
-            rf.me, rf.currentTerm, args.LeaderId, reply.Success)
+        LOG(dLog2, "S%d, Term: %d, AppendEntries returns failure to  S%d, Reason: term does not match",
+            rf.me, rf.currentTerm, args.LeaderId)
         return
     }
 
     // Append entries to my log.
     if len(args.Entries) != 0 {
-        LOG(dLog, "S%d, Term: %d, Append %d Entries to my log", rf.me, rf.currentTerm, len(args.Entries))
+        LOG(dLog2, "S%d, Term: %d, Append %d Entries to my log", rf.me, rf.currentTerm, len(args.Entries))
         rf.log = append(rf.log[:args.PrevLogIndex+1], args.Entries...)
+    }
+
+    // Try to update commitIndex
+    if args.LeaderCommit > rf.commitIndex {
+        oldCommitIndex := rf.commitIndex
+        if args.LeaderCommit > len(rf.log)-1 {
+            rf.commitIndex = len(rf.log) - 1
+        } else {
+            rf.commitIndex = args.LeaderCommit
+        }
+        LOG(dLog2, "S%d, Term: %d, Commit Index: %d -> %d", rf.me, rf.currentTerm, oldCommitIndex, rf.commitIndex)
+        rf.logApplier.applySignalCh <- struct{}{}
     }
 
     // Success
     reply.Success = true
-    LOG(dLog, "S%d, Term: %d, Reply AppendEntries from S%d, Success: %t", rf.me, rf.currentTerm, args.LeaderId, reply.Success)
+    LOG(dLog2, "S%d, Term: %d, AppendEntries returns success to S%d, Log: %v", rf.me, rf.currentTerm, args.LeaderId, rf.log)
 }
 
 func (rf *Raft) findCommitIndex() int {
+    LOG(dLog1, "S%d, Term: %d, Finding Commit Index, Match Index: %v", rf.me, rf.currentTerm, rf.matchIndex)
     tmpMatchIndex := make([]int, len(rf.matchIndex))
     copy(tmpMatchIndex, rf.matchIndex)
     sort.Ints(tmpMatchIndex)
@@ -100,8 +113,8 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     rf.mu.Lock()
     expectedTerm := rf.currentTerm
 
-    LOG(dHeartbeat, "S%d, Starting Append Entries to S%d, Term: %d, Log Length: %d, PrevLogIndex: %d, NextIndex: %d, EntriesToSend: %v",
-        rf.me, peer, rf.currentTerm, len(rf.log), rf.nextIndex[peer]-1, rf.nextIndex[peer], rf.getEntriesToSend(peer))
+    LOG(dLog1, "S%d, Starting Append Entries to S%d, Term: %d, Log Length: %d, PrevLogIndex: %d, NextIndex: %d, EntriesToSend: %v, Log: %v",
+        rf.me, peer, rf.currentTerm, len(rf.log), rf.nextIndex[peer]-1, rf.nextIndex[peer], rf.getEntriesToSend(peer), rf.log)
 
     args := AppendEntriesArgs{
         Term:         rf.currentTerm,
@@ -109,6 +122,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
         PrevLogIndex: rf.nextIndex[peer] - 1,
         PrevLogTerm:  rf.log[rf.nextIndex[peer]-1].Term,
         Entries:      rf.log[rf.nextIndex[peer]:],
+        LeaderCommit: rf.commitIndex,
     }
 
     rf.mu.Unlock()
@@ -151,9 +165,15 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     }
 
     rf.nextIndex[peer]++
-    rf.matchIndex[peer] = args.PrevLogIndex + len(args.Entries) - 1
+    rf.matchIndex[peer] = args.PrevLogIndex + len(args.Entries)
+
+    // We just updated matchIndex for peer. Maybe we can update commitIndex.
     newCommitIndex := rf.findCommitIndex()
+
+    LOG(dLog1, "S%d, Term: %d, New Commit Index: %d, Old Commit Index: %d, Match Index: %v", rf.me, rf.currentTerm, newCommitIndex, rf.commitIndex, rf.matchIndex[peer])
+    // it is possible that newCommitIndex = rf.commitIndex
     if newCommitIndex > rf.commitIndex {
+        LOG(dLog1, "S%d, Term: %d, Update commit index ", rf.me, rf.currentTerm, newCommitIndex, rf.me)
         rf.commitIndex = newCommitIndex
         rf.logApplier.applySignalCh <- struct{}{}
     }

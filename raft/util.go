@@ -25,10 +25,12 @@ const (
     dError   logTopic = "ERRO"
     dInfo    logTopic = "INFO"
     dLeader  logTopic = "LEAD"
-    dLog     logTopic = "LOG1"
+    dLog1    logTopic = "LOG1"
     dLog2    logTopic = "LOG2"
     dPersist logTopic = "PERS"
     dSnap    logTopic = "SNAP"
+
+    dApply logTopic = "APLY"
 
     // Term changes
     dTerm  logTopic = "TERM"

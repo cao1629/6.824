@@ -55,17 +55,22 @@ func makeSeed() int64 {
 }
 
 type config struct {
-    mu          sync.Mutex
-    t           *testing.T
-    finished    int32
-    net         *labrpc.Network
-    n           int
-    rafts       []*Raft
-    applyErr    []string // from apply channel readers
-    connected   []bool   // whether each server is on the net
-    saved       []*Persister
-    endnames    [][]string            // the port file names each sends to
-    logs        []map[int]interface{} // copy of each server's committed entries
+    mu        sync.Mutex
+    t         *testing.T
+    finished  int32
+    net       *labrpc.Network
+    n         int
+    rafts     []*Raft
+    applyErr  []string // from apply channel readers
+    connected []bool   // whether each server is on the net
+    saved     []*Persister
+    endnames  [][]string // the port file names each sends to
+
+    // copy of each server's committed entries
+    // map[int]interface{}: index -> command
+    // entries that have been applied to the state machine.
+    logs []map[int]interface{}
+
     lastApplied []int
     start       time.Time // time at which make_config() was called
     // begin()/end() statistics
@@ -86,6 +91,7 @@ func make_config(t *testing.T, n int, unreliable bool, snapshot bool) *config {
         }
         rand.Seed(makeSeed())
     })
+
     runtime.GOMAXPROCS(4)
     cfg := &config{}
     cfg.t = t
@@ -108,6 +114,7 @@ func make_config(t *testing.T, n int, unreliable bool, snapshot bool) *config {
     if snapshot {
         applier = cfg.applierSnap
     }
+
     // create a full set of Rafts.
     for i := 0; i < cfg.n; i++ {
         cfg.logs[i] = map[int]interface{}{}
@@ -514,6 +521,9 @@ func (cfg *config) checkNoLeader() {
 func (cfg *config) nCommitted(index int) (int, interface{}) {
     count := 0
     var cmd interface{} = nil
+
+    LOG(dTest, "nCommited: cfg.log = %v", cfg.logs)
+
     for i := 0; i < len(cfg.rafts); i++ {
         if cfg.applyErr[i] != "" {
             cfg.t.Fatal(cfg.applyErr[i])
@@ -578,14 +588,19 @@ func (cfg *config) wait(index int, n int, startTerm int) interface{} {
 // times, in case a leader fails just after Start().
 // if retry==false, calls Start() only once, in order
 // to simplify the early Lab 2B tests.
+//
+// retry: we already have a leader. we submit the command to the leader, and find out
 func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
     t0 := time.Now()
     starts := 0
+
     for time.Since(t0).Seconds() < 10 && cfg.checkFinished() == false {
-        // try all the servers, maybe one is the leader.
-        // index: we send the command to this server, which is a leader
+
         index := -1
+
+        // try all the servers, maybe one is the leader.
         for si := 0; si < cfg.n; si++ {
+            // starts = 1, 2, 3
             starts = (starts + 1) % cfg.n
             var rf *Raft
             cfg.mu.Lock()
@@ -595,21 +610,28 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
             cfg.mu.Unlock()
             if rf != nil {
                 index1, _, ok := rf.Start(cmd)
-                // if ok is false, this server is not the leader
+                LOG(dTest, "index1 = %d, cmd = %v, ok = %t", index1, cmd, ok)
+                // why rf.Start() fails? this raft peer is not the leader
                 if ok {
-                    LOG(dDebug, "Start, S%d", starts)
                     index = index1
                     break
                 }
             }
         }
 
+        // at this moment, we have already submitted a command to the leader
         if index != -1 {
+            LOG(dTest, "2 seconds to reach an agreement")
+
             // somebody claimed to be the leader and to have
             // submitted our command; wait a while for agreement.
             t1 := time.Now()
+
+            // our raft clusters have 2 seconds to reach an agreement
             for time.Since(t1).Seconds() < 2 {
                 nd, cmd1 := cfg.nCommitted(index)
+                LOG(dTest, "nd = %d, cmd = %d", nd, cmd)
+                // reached an agreement
                 if nd > 0 && nd >= expectedServers {
                     // committed
                     if cmd1 == cmd {
@@ -617,12 +639,17 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
                         return index
                     }
                 }
+
+                // wait for the next check
                 time.Sleep(20 * time.Millisecond)
             }
+
             if retry == false {
                 cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
             }
         } else {
+            // no one is the leader
+            LOG(dTest, "no one is the leader. need more time.")
             time.Sleep(50 * time.Millisecond)
         }
     }

@@ -149,13 +149,15 @@ func TestBasicAgree2B(t *testing.T) {
     cfg.begin("Test (2B): basic agreement")
 
     iters := 3
+
+    // index = 1, 2, 3
     for index := 1; index < iters+1; index++ {
         nd, _ := cfg.nCommitted(index)
         if nd > 0 {
-            LOG(dDebug, "some have committed before Start()")
             t.Fatalf("some have committed before Start()")
         }
 
+        // submit a command and then agree on it.
         xindex := cfg.one(index*100, servers, false)
 
         if xindex != index {
@@ -296,6 +298,8 @@ func For2023TestLeaderFailure2B(t *testing.T) {
 // disconnect and re-connect.
 //
 func TestFailAgree2B(t *testing.T) {
+    loggingInit()
+
     servers := 3
     cfg := make_config(t, servers, false, false)
     defer cfg.cleanup()

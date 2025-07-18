@@ -103,7 +103,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
     defer rf.mu.Unlock()
 
     if rf.serverState != Leader {
-        LOG(dLog, "S%d, Term: %d, Start a command on a server which is not a leader", rf.me, rf.currentTerm)
+        LOG(dLog1, "S%d, Term: %d, Submit a command on a server which is not a leader", rf.me, rf.currentTerm)
         return 0, 0, false
     }
 
@@ -115,7 +115,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
     rf.persist()
 
-    LOG(dLog, "S%d, Term: %d, Leader accept a new log entry", rf.me, rf.currentTerm)
+    LOG(dLog1, "S%d, Term: %d, Submit command %v", rf.me, rf.currentTerm, command)
     return len(rf.log) - 1, rf.currentTerm, true
 }
 
@@ -176,7 +176,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
     }
 
     rf.applyCh = applyCh
-    rf.logApplier = NewLogApplier(applyCh)
+    rf.logApplier = NewLogApplier(rf, applyCh)
 
     // Your initialization code here (2A, 2B, 2C).
     go func() {
@@ -211,9 +211,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 // If I'm currently a leader, I stop my heartbeat ticker.
 // If I'm currently a candidate, I reset the election ticker.
 func (rf *Raft) mayUpdateTerm(term int, from int) bool {
-
     if term > rf.currentTerm {
-        LOG(dTerm, "S%d, Term: %d -> %d, Reason: learned a higher term from S%d", rf.me, rf.currentTerm, term, from)
+        oldTerm := rf.currentTerm
+        oldState := rf.serverState
+
         rf.currentTerm = term
 
         if rf.serverState == Leader {
@@ -221,13 +222,16 @@ func (rf *Raft) mayUpdateTerm(term int, from int) bool {
         }
         rf.electionTicker.Reset(generateRandomTimeout())
 
-        LOG(dState, "S%d, Term: %d, State: %s -> %s, Reason: learned a higher term from S%d", rf.me, rf.currentTerm, rf.serverState, Follower, from)
+        LOG(dState, "S%d, Term: %d -> %d, State: %s -> %s, Reason: learned a higher term from S%d",
+            rf.me, oldTerm, rf.currentTerm, oldState, rf.serverState, Follower, from)
+
         rf.serverState = Follower
         rf.votedFor = -1
 
         rf.persist()
         return true
     }
+
     return false
 }
 
@@ -243,6 +247,17 @@ func (rf *Raft) getEntriesToSend(peer int) []EntryInfo {
         entriesInfo[i-rf.nextIndex[peer]] = EntryInfo{
             index: i,
             term:  rf.log[i].Term,
+        }
+    }
+    return entriesInfo
+}
+
+func (rf *Raft) getLogInfo() []EntryInfo {
+    entriesInfo := make([]EntryInfo, len(rf.log))
+    for i, entry := range rf.log {
+        entriesInfo[i] = EntryInfo{
+            index: i,
+            term:  entry.Term,
         }
     }
     return entriesInfo

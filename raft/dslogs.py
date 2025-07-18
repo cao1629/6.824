@@ -13,18 +13,37 @@ from rich.traceback import install
 # Mapping from topics to colors
 TOPICS = {
     "INFO": "#9a9a99",
+
     "DEBG": "#67a0b2",
+
+    # RequestVoteFromOther, RequestVoteFrom
     "ELEC": "#d0b343",
-    "TERM": "#70c43f",
+
+    # State and term changes
+    "VOTE": "#70c43f",
+
+    # State and term changes
     "STAT": "#4878bc",
-    "TICK": "#398280",
+
+    # Test
+    "TEST": "#398280",
+
     "CMIT": "#98719f",
-    "PERS": "#d08341",
+
+    # Log Application
+    "APLY": "#d08341",
+
     "SNAP": "#FD971F",
+
     "LOCK": "#ff615c",
+
+    # Start, AppendEntriesToOther, AppendEntriesTo
     "LOG1": "#00813c",
-    "HERT": "#fe2c79",
-    "INFO": "#ffffff",
+
+    # AppendEntries
+    "LOG2": "#fe2c79",
+
+#     "INFO": "#ffffff",
     "WARN": "#d08341",
     "ERRO": "#fe2626",
 }

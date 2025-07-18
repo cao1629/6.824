@@ -14,8 +14,8 @@ package raft
 // log已经commit了 可以apply了
 type ApplyMsg struct {
     // indicates if this message contains a newly committed log entry
-    // 如果是true 这个 ApplyMsg 就是一个command message
-    // 如果是false 这个 ApplyMsg 就是一个snapshot message
+    // if true, this ApplyMsg contains a command message
+    // if false, this ApplyMsg contains a snapshot message
     CommandValid bool
 
     // command to apply to state machine
@@ -39,11 +39,12 @@ type LogApplier struct {
     rf            *Raft
 }
 
-func NewLogApplier(applyCh chan ApplyMsg) *LogApplier {
+func NewLogApplier(rf *Raft, applyCh chan ApplyMsg) *LogApplier {
     logApplier := &LogApplier{
         done:          make(chan struct{}),
         applyCh:       applyCh,
         applySignalCh: make(chan struct{}),
+        rf:            rf,
     }
 
     go func() {
@@ -52,6 +53,7 @@ func NewLogApplier(applyCh chan ApplyMsg) *LogApplier {
             case <-logApplier.done:
                 return
             case <-logApplier.applySignalCh:
+                //LOG(dApply, "Apply")
                 logApplier.Apply()
             }
         }
@@ -61,6 +63,7 @@ func NewLogApplier(applyCh chan ApplyMsg) *LogApplier {
 }
 
 func (logApplier *LogApplier) Apply() {
+    //LOG(dApply, "Last Applied: %d, Commit Index: %d", logApplier.rf.lastApplied+1, logApplier.rf.commitIndex)
     for i := logApplier.rf.lastApplied + 1; i <= logApplier.rf.commitIndex; i++ {
         logApplier.applyCh <- ApplyMsg{
             CommandValid: true,
