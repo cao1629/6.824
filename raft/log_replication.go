@@ -1,7 +1,6 @@
 package raft
 
 import (
-    "log/slog"
     "sort"
 )
 
@@ -23,6 +22,7 @@ type AppendEntriesArgs struct {
 type AppendEntriesReply struct {
     Term    int
     Success bool
+    Check   bool
 }
 
 // I could be a leader, candidate, or follower.
@@ -34,11 +34,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
     reply.Term = rf.currentTerm
     reply.Success = false
+    reply.Check = true
 
     // I received a message from someone with a smaller term.
     // Ignore this message, send back my current term and false.
     if args.Term < rf.currentTerm {
-        LOG(dLog2, "S%d, Term: %d, Reply AppendEntries from S%d, Success: %t, Reason: ignore messages with smaller term",
+        LOG(dLog2, "S%d, Term: %d, Result of AppendEntries, Send it to S%d, Success: %t, Reason: ignore messages with smaller term",
             rf.me, rf.currentTerm, args.LeaderId, reply.Success)
         return
     }
@@ -57,14 +58,14 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // Check if log matches.
     // (a) my log is shorter than the leader's log
     if args.PrevLogIndex >= len(rf.log) {
-        LOG(dLog2, "S%d, Term: %d, Reply AppendEntries from S%d, Success: %t, Reason: my log is shorter than the leader's log",
+        LOG(dLog2, "S%d, Term: %d, Result of AppendEntries, Send it to S%d, Success: %t, Reason: my log is shorter than the leader's log",
             rf.me, rf.currentTerm, args.LeaderId, reply.Success)
         return
     }
 
     // (b) term does not match
     if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
-        LOG(dLog2, "S%d, Term: %d, AppendEntries returns failure to  S%d, Reason: term does not match",
+        LOG(dLog2, "S%d, Term: %d, Result of AppendEntries, Send it to S%d, Success: false, Reason: term does not match",
             rf.me, rf.currentTerm, args.LeaderId)
         return
     }
@@ -89,7 +90,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
     // Success
     reply.Success = true
-    LOG(dLog2, "S%d, Term: %d, AppendEntries returns success to S%d, Log: %v", rf.me, rf.currentTerm, args.LeaderId, rf.log)
+    LOG(dLog2, "S%d, Term: %d, Result of AppendEntries, Send it to S%d, Success: true, Log: %v", rf.me, rf.currentTerm, args.LeaderId, rf.log)
 }
 
 func (rf *Raft) findCommitIndex() int {
@@ -133,6 +134,10 @@ func (rf *Raft) AppendEntriesTo(peer int) {
 
     rf.mu.Lock()
     defer rf.mu.Unlock()
+
+    if !reply.Check {
+        return
+    }
 
     LOG(dLog1, "S%d, Term: %d, Reply of Append Entries to S%d, Reply: %v", rf.me, rf.currentTerm, peer, reply)
 
@@ -185,7 +190,6 @@ func (rf *Raft) AppendEntriesTo(peer int) {
 
 // Now I'm a leader. I'm sending AppendEntries RPC to all other peers concurently.
 func (rf *Raft) AppendEntriesToOthers() {
-    slog.Info("AppendEntriesToOthers", "leader", rf.me, "term", rf.currentTerm, "state", rf.serverState)
     for peer := range rf.peers {
         if peer == rf.me {
             continue

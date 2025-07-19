@@ -196,8 +196,9 @@ func (rf *Raft) StartElection() {
                         rf.serverState = Leader
                         for i := range rf.peers {
                             rf.nextIndex[i] = len(rf.log)
-                            rf.matchIndex[i] = len(rf.log)
+                            rf.matchIndex[i] = 0
                         }
+                        rf.matchIndex[rf.me] = len(rf.log) - 1
                         rf.electionTicker.Stop()
                         rf.heartbeatTicker.Reset(heartbeatInterval)
 

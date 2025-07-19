@@ -63,7 +63,10 @@ func NewLogApplier(rf *Raft, applyCh chan ApplyMsg) *LogApplier {
 }
 
 func (logApplier *LogApplier) Apply() {
-    LOG(dApply, "S%d, Term: %d, Log: %v, Last Applied: %d, Commit Index: %d", logApplier.rf.me, logApplier.rf.currentTerm, logApplier.rf.log, logApplier.rf.lastApplied+1, logApplier.rf.commitIndex)
+
+    LOG(dApply, "S%d, Term: %d, Apply, Log: %v, Last Applied: %d, Commit Index: %d",
+        logApplier.rf.me, logApplier.rf.currentTerm, logApplier.rf.log, logApplier.rf.lastApplied, logApplier.rf.commitIndex)
+
     for i := logApplier.rf.lastApplied + 1; i <= logApplier.rf.commitIndex; i++ {
         logApplier.applyCh <- ApplyMsg{
             CommandValid: true,

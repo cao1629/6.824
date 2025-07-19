@@ -18,7 +18,6 @@ package raft
 //
 
 import (
-    "log/slog"
     //	"bytes"
     "sync"
     "sync/atomic"
@@ -173,6 +172,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
     rf.nextIndex = make([]int, len(peers))
     rf.matchIndex = make([]int, len(peers))
 
+    rf.lastApplied = 0
+
     rf.log = []LogEntry{
         {0, 0, false},
     }
@@ -193,17 +194,14 @@ func Make(peers []*labrpc.ClientEnd, me int,
             case <-rf.killCh:
                 rf.heartbeatTicker.Stop()
                 rf.electionTicker.Stop()
-                slog.Info("Raft server ticker goroutine shutting down", "struct", "Raft", "method", "Make", "server", me)
                 return
             }
         }
     }()
 
     // initialize from state persisted before a crash
-    //slog.Info("Reading persisted state", "struct", "Raft", "method", "Make", "server", me)
     rf.readPersist(rf.persister.ReadRaftState())
 
-    //slog.Info("Raft server initialization complete", "struct", "Raft", "method", "Make", "server", me, "term", rf.currentTerm, "state", rf.serverState)
     return rf
 }
 
@@ -224,10 +222,11 @@ func (rf *Raft) mayUpdateTerm(term int, from int) bool {
         }
         rf.electionTicker.Reset(generateRandomTimeout())
 
+        rf.serverState = Follower
+
         LOG(dState, "S%d, Term: %d -> %d, State: %s -> %s, Reason: learned a higher term from S%d",
             rf.me, oldTerm, rf.currentTerm, oldState, rf.serverState, from)
 
-        rf.serverState = Follower
         rf.votedFor = -1
 
         rf.persist()
