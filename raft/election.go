@@ -29,13 +29,13 @@ type RequestVoteReply struct {
 // I receive a RequestVote RPC from a candidate.
 // I could be a leader, candidate, or a follower.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-    LOG(dDebug, "S%d, Term: %d, Starting processing RequestVote from S%d", rf.me, rf.currentTerm, args.CandidateId)
+    //LOG(dDebug, "S%d, Term: %d, Starting processing RequestVote from S%d", rf.me, rf.currentTerm, args.CandidateId)
     rf.mu.Lock()
-    defer LOG(dDebug, "S%d, Term: %d, Finished processing RequestVote from S%d", rf.me, rf.currentTerm, args.CandidateId)
+    //defer LOG(dDebug, "S%d, Term: %d, Finished processing RequestVote from S%d", rf.me, rf.currentTerm, args.CandidateId)
     defer rf.mu.Unlock()
 
     // Your code here (2A, 2B).
-    LOG(dVote, "S%d, Term: %d, Voting for S%d", rf.me, rf.currentTerm, args.CandidateId)
+    //LOG(dVote, "S%d, Term: %d, Voting for S%d", rf.me, rf.currentTerm, args.CandidateId)
 
     reply.Term = rf.currentTerm
     reply.VoteGranted = false
@@ -43,6 +43,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
     // I received a message from someone with a smaller term.
     // Ignore this message, send back my current term and false.
     if rf.currentTerm > args.Term {
+        LOG(dVote, "S%d, Term %d, Vote false for S%d, Reason: Ignore messages with smaller term",
+            rf.me, rf.currentTerm, args.CandidateId)
         return
     }
 
@@ -70,6 +72,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
     }
 
     if !upToDateCandidate {
+        LOG(dVote, "S%d, Term: %d, Vote false for S%d, Reason: Candidate's log is not up-to-date",
+            rf.me, rf.currentTerm, args.CandidateId)
         return
     }
 
@@ -77,7 +81,12 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
     if rf.votedFor == -1 {
         rf.votedFor = args.CandidateId
         reply.VoteGranted = true
+    } else {
+        // I have already voted for someone in this term.
+        LOG(dVote, "S%d, Term: %d, Vote false for S%d, Reason: Already voted for S%d in this term",
+            rf.me, rf.currentTerm, args.CandidateId, rf.votedFor)
     }
+
 }
 
 //
@@ -129,11 +138,12 @@ func (rf *Raft) isContextLost(expectedSeverState ServerState, term int) bool {
 
 func (rf *Raft) StartElection() {
     rf.mu.Lock()
-    LOG(dState, "S%d, Term: %d -> %d, Reason: timeout", rf.me, rf.currentTerm, rf.currentTerm+1)
+    oldTerm := rf.currentTerm
+    oldState := rf.serverState
     rf.currentTerm++
-    LOG(dState, "S%d, Term: %d, State: %s -> %s, Reason: timeout", rf.me, rf.currentTerm, rf.serverState, Candidate)
     rf.serverState = Candidate
     rf.votedFor = rf.me
+    LOG(dState, "S%d, Term: %d -> %d, State: %s -> %s, Reason: timeout", rf.me, oldTerm, rf.currentTerm, oldState, rf.serverState)
     rf.persist()
     rf.electionTicker.Reset(generateRandomTimeout())
     electionTerm := rf.currentTerm
@@ -149,7 +159,7 @@ func (rf *Raft) StartElection() {
 
         peer := i
         go func() {
-            LOG(dElection, "S%d, Term: %d, Request Vote From S%d", rf.me, rf.currentTerm, peer)
+            LOG(dElection, "S%d, Term: %d, Request Vote from S%d", rf.me, rf.currentTerm, peer)
             voteGranted := rf.RequestVoteFrom(peer)
             LOG(dElection, "S%d, Term: %d, Vote from S%d: %t", rf.me, rf.currentTerm, peer, voteGranted)
             voteGrantedCh <- voteGranted

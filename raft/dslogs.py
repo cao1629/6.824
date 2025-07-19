@@ -45,6 +45,7 @@ TOPICS = {
 
 #     "INFO": "#ffffff",
     "WARN": "#d08341",
+
     "ERRO": "#fe2626",
 }
 # fmt: on

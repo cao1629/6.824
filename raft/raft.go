@@ -113,6 +113,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
         CommandValid: true,
     })
 
+    rf.matchIndex[rf.me] = len(rf.log) - 1
+
     rf.persist()
 
     LOG(dLog1, "S%d, Term: %d, Submit command %v", rf.me, rf.currentTerm, command)
@@ -223,7 +225,7 @@ func (rf *Raft) mayUpdateTerm(term int, from int) bool {
         rf.electionTicker.Reset(generateRandomTimeout())
 
         LOG(dState, "S%d, Term: %d -> %d, State: %s -> %s, Reason: learned a higher term from S%d",
-            rf.me, oldTerm, rf.currentTerm, oldState, rf.serverState, Follower, from)
+            rf.me, oldTerm, rf.currentTerm, oldState, rf.serverState, from)
 
         rf.serverState = Follower
         rf.votedFor = -1

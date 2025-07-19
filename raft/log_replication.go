@@ -71,7 +71,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
     // Append entries to my log.
     if len(args.Entries) != 0 {
-        LOG(dLog2, "S%d, Term: %d, Append %d Entries to my log", rf.me, rf.currentTerm, len(args.Entries))
+        LOG(dLog2, "S%d, Term: %d, Append %d Entries to my log: %v", rf.me, rf.currentTerm, len(args.Entries), args.Entries)
         rf.log = append(rf.log[:args.PrevLogIndex+1], args.Entries...)
     }
 
@@ -114,7 +114,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     expectedTerm := rf.currentTerm
 
     LOG(dLog1, "S%d, Starting Append Entries to S%d, Term: %d, Log Length: %d, PrevLogIndex: %d, NextIndex: %d, EntriesToSend: %v, Log: %v",
-        rf.me, peer, rf.currentTerm, len(rf.log), rf.nextIndex[peer]-1, rf.nextIndex[peer], rf.getEntriesToSend(peer), rf.log)
+        rf.me, peer, rf.currentTerm, len(rf.log), rf.nextIndex[peer]-1, rf.nextIndex[peer], rf.log[rf.nextIndex[peer]:], rf.log)
 
     args := AppendEntriesArgs{
         Term:         rf.currentTerm,
@@ -133,6 +133,8 @@ func (rf *Raft) AppendEntriesTo(peer int) {
 
     rf.mu.Lock()
     defer rf.mu.Unlock()
+
+    LOG(dLog1, "S%d, Term: %d, Reply of Append Entries to S%d, Reply: %v", rf.me, rf.currentTerm, peer, reply)
 
     if didUpdateTerm := rf.mayUpdateTerm(reply.Term, peer); didUpdateTerm {
         // I don't need to handle the reply anymore. Since I learned a higher term, and became a follower.
@@ -153,8 +155,11 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     // 2. Log doesn't match.
     // (a) I'm a leader. My log is longer than the other peer's log.
     // (b) I'm a leader. The other peer's log is not shorter than mine, but its log at prevLogIndex has a different term than prevLogTerm.
-    // I need to decrease nextIndex for this peer.
+    //
+    // 3. Network failure
+    // no need to decrement nextIndex
     if !reply.Success {
+        // Only decrement
         rf.nextIndex[peer]--
         return
     }
@@ -170,10 +175,9 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     // We just updated matchIndex for peer. Maybe we can update commitIndex.
     newCommitIndex := rf.findCommitIndex()
 
-    LOG(dLog1, "S%d, Term: %d, New Commit Index: %d, Old Commit Index: %d, Match Index: %v", rf.me, rf.currentTerm, newCommitIndex, rf.commitIndex, rf.matchIndex[peer])
     // it is possible that newCommitIndex = rf.commitIndex
     if newCommitIndex > rf.commitIndex {
-        LOG(dLog1, "S%d, Term: %d, Update commit index ", rf.me, rf.currentTerm, newCommitIndex, rf.me)
+        LOG(dLog1, "S%d, Term: %d, Update commit index %d -> %d", rf.me, rf.currentTerm, rf.commitIndex, newCommitIndex)
         rf.commitIndex = newCommitIndex
         rf.logApplier.applySignalCh <- struct{}{}
     }

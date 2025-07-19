@@ -590,6 +590,8 @@ func (cfg *config) wait(index int, n int, startTerm int) interface{} {
 // to simplify the early Lab 2B tests.
 //
 // retry: we already have a leader. we submit the command to the leader, and find out
+//
+//
 func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
     t0 := time.Now()
     starts := 0
@@ -608,9 +610,9 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
                 rf = cfg.rafts[starts]
             }
             cfg.mu.Unlock()
+
             if rf != nil {
                 index1, _, ok := rf.Start(cmd)
-                LOG(dTest, "index1 = %d, cmd = %v, ok = %t", index1, cmd, ok)
                 // why rf.Start() fails? this raft peer is not the leader
                 if ok {
                     index = index1
@@ -628,6 +630,8 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
             t1 := time.Now()
 
             // our raft clusters have 2 seconds to reach an agreement
+            // if reply is false, we only wait for one 2-second.
+            // if reply is true, submit the command multiple times
             for time.Since(t1).Seconds() < 2 {
                 nd, cmd1 := cfg.nCommitted(index)
                 LOG(dTest, "nd = %d, cmd = %d", nd, cmd)
@@ -647,6 +651,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
             if retry == false {
                 cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
             }
+
         } else {
             // no one is the leader
             LOG(dTest, "no one is the leader. need more time.")
