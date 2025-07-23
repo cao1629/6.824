@@ -85,7 +85,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
             rf.commitIndex = args.LeaderCommit
         }
         LOG(dLog2, "S%d, Term: %d, Commit Index: %d -> %d", rf.me, rf.currentTerm, oldCommitIndex, rf.commitIndex)
-        rf.logApplier.applySignalCh <- struct{}{}
+
+        // When commitIndex is updated, we need to apply log[lastApplied+1 : commitIndex] to the state machine
+        rf.Apply()
+
+        //rf.logApplier.applySignalCh <- struct{}{}
     }
 
     // Success
@@ -98,7 +102,6 @@ func (rf *Raft) findCommitIndex() int {
     tmpMatchIndex := make([]int, len(rf.matchIndex))
     copy(tmpMatchIndex, rf.matchIndex)
     sort.Ints(tmpMatchIndex)
-    // index是:0 1 2 3 4 5  中位数的索引是(len-1)/2
     return tmpMatchIndex[(len(tmpMatchIndex)-1)/2]
 }
 
@@ -174,7 +177,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
         return
     }
 
-    rf.nextIndex[peer]++
+    rf.nextIndex[peer] += len(args.Entries)
     rf.matchIndex[peer] = args.PrevLogIndex + len(args.Entries)
 
     // We just updated matchIndex for peer. Maybe we can update commitIndex.
@@ -184,7 +187,8 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     if newCommitIndex > rf.commitIndex {
         LOG(dLog1, "S%d, Term: %d, Update commit index %d -> %d", rf.me, rf.currentTerm, rf.commitIndex, newCommitIndex)
         rf.commitIndex = newCommitIndex
-        rf.logApplier.applySignalCh <- struct{}{}
+        //rf.logApplier.applySignalCh <- struct{}{}
+        rf.Apply()
     }
 }
 

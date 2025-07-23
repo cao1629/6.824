@@ -11,7 +11,6 @@ package raft
 // snapshots) on the applyCh, but set CommandValid to false for these
 // other uses.
 //
-// log已经commit了 可以apply了
 type ApplyMsg struct {
     // indicates if this message contains a newly committed log entry
     // if true, this ApplyMsg contains a command message
@@ -31,49 +30,14 @@ type ApplyMsg struct {
     SnapshotIndex int
 }
 
-// 每个peer都有一个LogApplier
-type LogApplier struct {
-    done          chan struct{}
-    applyCh       chan ApplyMsg
-    applySignalCh chan struct{}
-    rf            *Raft
-}
+// Apply log[lastApplied+1 : commitIndex] to the state machine
+func (rf *Raft) Apply() {
 
-func NewLogApplier(rf *Raft, applyCh chan ApplyMsg) *LogApplier {
-    logApplier := &LogApplier{
-        done:          make(chan struct{}),
-        applyCh:       applyCh,
-        applySignalCh: make(chan struct{}),
-        rf:            rf,
-    }
-
-    go func() {
-        for {
-            select {
-            case <-logApplier.done:
-                return
-            case <-logApplier.applySignalCh:
-                // LOG(dApply, "Apply")
-                logApplier.Apply()
-            }
-        }
-    }()
-
-    return logApplier
-}
-
-func (logApplier *LogApplier) Apply() {
-
-    LOG(dApply, "S%d, Term: %d, Apply, Log: %v, Last Applied: %d, Commit Index: %d",
-        logApplier.rf.me, logApplier.rf.currentTerm, logApplier.rf.log, logApplier.rf.lastApplied, logApplier.rf.commitIndex)
-
-    for i := logApplier.rf.lastApplied + 1; i <= logApplier.rf.commitIndex; i++ {
-        logApplier.applyCh <- ApplyMsg{
+    for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
+        rf.applyCh <- ApplyMsg{
             CommandValid: true,
-            Command:      logApplier.rf.log[i].Command,
+            Command:      rf.log[i].Command,
             CommandIndex: i,
         }
     }
-
-    logApplier.rf.lastApplied = logApplier.rf.commitIndex
 }

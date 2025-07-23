@@ -132,9 +132,12 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 // should call killed() to check whether it should stop.
 //
 // Simulate a server's death.
+//
+// Permantently shut down the server
 func (rf *Raft) Kill() {
     atomic.StoreInt32(&rf.dead, 1)
     // Stop the election ticker when killed
+    //rf.killCh <- struct{}{}
 }
 
 func (rf *Raft) killed() bool {
@@ -192,6 +195,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
                 go rf.StartElection()
 
             case <-rf.killCh:
+                // When killed, this server will stop after its current work is done.
+                // TODO: Stop its current work.
                 rf.heartbeatTicker.Stop()
                 rf.electionTicker.Stop()
                 return
