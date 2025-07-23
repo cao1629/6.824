@@ -1,5 +1,34 @@
 package raft
 
+import "time"
+
+type ElectionTicker struct {
+    C     chan time.Time
+    timer *time.Timer
+}
+
+func NewElectionTicker() *ElectionTicker {
+    ticker := &ElectionTicker{
+        C: make(chan time.Time),
+    }
+    return ticker
+}
+
+func (et *ElectionTicker) Reset(interval time.Duration) {
+    et.Stop()
+    et.timer = time.NewTimer(interval)
+    go func() {
+        tick := <-et.timer.C
+        et.C <- tick
+    }()
+}
+
+func (et *ElectionTicker) Stop() {
+    if et.timer != nil {
+        et.timer.Stop()
+    }
+}
+
 //
 // example RequestVote RPC arguments structure.
 // field names must start with capital letters!
@@ -147,7 +176,10 @@ func (rf *Raft) StartElection() {
     rf.votedFor = rf.me
     LOG(dState, "S%d, Term: %d -> %d, State: %s -> %s, Reason: timeout", rf.me, oldTerm, rf.currentTerm, oldState, rf.serverState)
     rf.persist()
+
+    rf.electionClock = time.Now()
     rf.electionTicker.Reset(generateRandomTimeout())
+
     electionTerm := rf.currentTerm
     rf.mu.Unlock()
 
@@ -201,8 +233,11 @@ func (rf *Raft) StartElection() {
                             rf.matchIndex[i] = 0
                         }
                         rf.matchIndex[rf.me] = len(rf.log) - 1
+
                         rf.electionTicker.Stop()
+
                         rf.heartbeatTicker.Reset(heartbeatInterval)
+                        rf.heartbeatClock = time.Now()
 
                         // I've received enough votes and become a leader. Terminate this goroutine to ignore the remaining votes.
                         rf.mu.Unlock()

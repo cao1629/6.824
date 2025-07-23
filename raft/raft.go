@@ -68,11 +68,16 @@ type Raft struct {
 
     // two tickers
     heartbeatTicker *time.Ticker
-    electionTicker  *time.Ticker
+
+    electionTicker *ElectionTicker
 
     applyCh chan ApplyMsg
     killCh  chan struct{}
 
+    // data members for debugging
+
+    // If I'm a leader, record the moment I call AppendEntriesToOthers
+    // If I'm not a leader, record the moment I call AppendEntries
     heartbeatClock time.Time
     electionClock  time.Time
 }
@@ -169,7 +174,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
     rf.currentTerm = 1
 
     rf.serverState = Follower
-    rf.electionTicker = time.NewTicker(generateRandomTimeout())
+
     rf.heartbeatTicker = time.NewTicker(heartbeatInterval)
     rf.heartbeatTicker.Stop()
 
@@ -182,28 +187,27 @@ func Make(peers []*labrpc.ClientEnd, me int,
         {0, 0, false},
     }
 
+    rf.electionTicker = NewElectionTicker()
     rf.heartbeatClock = time.Now()
-    rf.electionClock = time.Now()
-
     rf.applyCh = applyCh
 
     // Your initialization code here (2A, 2B, 2C).
     go func() {
+        rf.electionClock = time.Now()
+        rf.electionTicker.Reset(generateRandomTimeout())
         for {
             select {
             case <-rf.heartbeatTicker.C:
+                LOG(dTicker, "S%d, Term: %d, Heartbeat Timeout, elapse: %v", rf.me, rf.currentTerm, time.Since(rf.heartbeatClock))
+                rf.heartbeatClock = time.Now()
                 rf.AppendEntriesToOthers()
 
             case <-rf.electionTicker.C:
                 LOG(dElection, "S%d, Term: %d, Election Timeout, elapse: %v", rf.me, rf.currentTerm, time.Since(rf.electionClock))
-                rf.electionClock = time.Now()
                 go rf.StartElection()
 
             case <-rf.killCh:
                 // When killed, this server will stop after its current work is done.
-                // TODO: Stop its current work.
-                //rf.heartbeatTicker.Stop()
-                //rf.electionTicker.Stop()
                 return
             }
         }
@@ -230,6 +234,8 @@ func (rf *Raft) mayUpdateTerm(term int, from int) bool {
         if rf.serverState == Leader {
             rf.heartbeatTicker.Stop()
         }
+
+        rf.electionClock = time.Now()
         rf.electionTicker.Reset(generateRandomTimeout())
 
         rf.serverState = Follower

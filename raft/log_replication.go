@@ -29,8 +29,12 @@ type AppendEntriesReply struct {
 // I could be a leader, candidate, or follower.
 // Now I receive an AppendEntries RPC from a self-claimed leader.
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-    rf.electionTicker.Stop()
-    rf.electionTicker = time.NewTicker(generateRandomTimeout())
+    LOG(dTicker, "S%d, Term: %d, Received AppendEntriesTo from S%d, elapsed: %v", rf.me, rf.currentTerm, args.LeaderId, time.Since(rf.heartbeatClock))
+    rf.heartbeatClock = time.Now()
+
+    rf.electionClock = time.Now()
+    rf.electionTicker.Reset(generateRandomTimeout())
+
     LOG(dTicker, "S%d, Term: %d, Reset election ticker after receiving AppendEntries from S%d", rf.me, rf.currentTerm, args.LeaderId)
     rf.electionClock = time.Now()
     rf.mu.Lock()
@@ -56,7 +60,10 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
         // I should become a follower, reset my votedFor, and reset my election timer.
         rf.serverState = Follower
         rf.votedFor = -1
+
+        rf.electionClock = time.Now()
         rf.electionTicker.Reset(generateRandomTimeout())
+
     }
 
     //  Here I must be a follower with the most up-to-date term.

@@ -59,6 +59,10 @@ func TestInitialElection2A(t *testing.T) {
     cfg.end()
 }
 
+// (1) Check if we have a leader
+// (2) Disconnect the leader and then check we can get a new leader
+// (3) Bring the old leader back, and then check we still have only one ledaer
+// (4) Disconnect two servers, and then we cannot finish elections.
 func TestReElection2A(t *testing.T) {
     loggingInit()
     servers := 3
