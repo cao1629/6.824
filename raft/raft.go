@@ -70,10 +70,11 @@ type Raft struct {
     heartbeatTicker *time.Ticker
     electionTicker  *time.Ticker
 
-    killCh chan struct{}
+    applyCh chan ApplyMsg
+    killCh  chan struct{}
 
-    applyCh    chan ApplyMsg
-    logApplier *LogApplier
+    heartbeatClock time.Time
+    electionClock  time.Time
 }
 
 // return currentTerm and whether this server
@@ -181,8 +182,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
         {0, 0, false},
     }
 
+    rf.heartbeatClock = time.Now()
+    rf.electionClock = time.Now()
+
     rf.applyCh = applyCh
-    rf.logApplier = NewLogApplier(rf, applyCh)
 
     // Your initialization code here (2A, 2B, 2C).
     go func() {
@@ -192,13 +195,15 @@ func Make(peers []*labrpc.ClientEnd, me int,
                 rf.AppendEntriesToOthers()
 
             case <-rf.electionTicker.C:
+                LOG(dElection, "S%d, Term: %d, Election Timeout, elapse: %v", rf.me, rf.currentTerm, time.Since(rf.electionClock))
+                rf.electionClock = time.Now()
                 go rf.StartElection()
 
             case <-rf.killCh:
                 // When killed, this server will stop after its current work is done.
                 // TODO: Stop its current work.
-                rf.heartbeatTicker.Stop()
-                rf.electionTicker.Stop()
+                //rf.heartbeatTicker.Stop()
+                //rf.electionTicker.Stop()
                 return
             }
         }

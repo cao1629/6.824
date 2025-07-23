@@ -2,6 +2,7 @@ package raft
 
 import (
     "sort"
+    "time"
 )
 
 type LogEntry struct {
@@ -28,9 +29,14 @@ type AppendEntriesReply struct {
 // I could be a leader, candidate, or follower.
 // Now I receive an AppendEntries RPC from a self-claimed leader.
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+    rf.electionTicker.Stop()
+    rf.electionTicker = time.NewTicker(generateRandomTimeout())
+    LOG(dTicker, "S%d, Term: %d, Reset election ticker after receiving AppendEntries from S%d", rf.me, rf.currentTerm, args.LeaderId)
+    rf.electionClock = time.Now()
     rf.mu.Lock()
+    start := time.Now()
     defer rf.mu.Unlock()
-    defer rf.electionTicker.Reset(generateRandomTimeout())
+    defer LOG(dLog2, "S%d, Term: %d, Duration: %v", rf.me, rf.currentTerm, time.Since(start))
 
     reply.Term = rf.currentTerm
     reply.Success = false
@@ -87,9 +93,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
         LOG(dLog2, "S%d, Term: %d, Commit Index: %d -> %d", rf.me, rf.currentTerm, oldCommitIndex, rf.commitIndex)
 
         // When commitIndex is updated, we need to apply log[lastApplied+1 : commitIndex] to the state machine
-        rf.Apply()
-
-        //rf.logApplier.applySignalCh <- struct{}{}
+        go rf.Apply()
     }
 
     // Success
@@ -187,8 +191,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     if newCommitIndex > rf.commitIndex {
         LOG(dLog1, "S%d, Term: %d, Update commit index %d -> %d", rf.me, rf.currentTerm, rf.commitIndex, newCommitIndex)
         rf.commitIndex = newCommitIndex
-        //rf.logApplier.applySignalCh <- struct{}{}
-        rf.Apply()
+        go rf.Apply()
     }
 }
 

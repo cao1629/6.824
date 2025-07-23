@@ -29,6 +29,8 @@ type RequestVoteReply struct {
 // I receive a RequestVote RPC from a candidate.
 // I could be a leader, candidate, or a follower.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+    LOG(dVote, "S%d, Term: %d, Received Vote Request from S%d", rf.me, rf.currentTerm, args.CandidateId)
+
     //LOG(dDebug, "S%d, Term: %d, Starting processing RequestVote from S%d", rf.me, rf.currentTerm, args.CandidateId)
     rf.mu.Lock()
     //defer LOG(dDebug, "S%d, Term: %d, Finished processing RequestVote from S%d", rf.me, rf.currentTerm, args.CandidateId)

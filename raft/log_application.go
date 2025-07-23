@@ -31,7 +31,10 @@ type ApplyMsg struct {
 }
 
 // Apply log[lastApplied+1 : commitIndex] to the state machine
+// thread-safe
 func (rf *Raft) Apply() {
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
 
     for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
         rf.applyCh <- ApplyMsg{
@@ -40,4 +43,7 @@ func (rf *Raft) Apply() {
             CommandIndex: i,
         }
     }
+
+    LOG(dApply, "S%d, Term: %d, Apply log from index %d to %d", rf.me, rf.currentTerm, rf.lastApplied+1, rf.commitIndex)
+    rf.lastApplied = rf.commitIndex
 }

@@ -23,17 +23,17 @@ import "encoding/base64"
 import "time"
 import "fmt"
 
-//const (
-//    electionTimeoutMin time.Duration = 3 * time.Second // 250*time.Ms
-//    electionTimeoutMax time.Duration = 6 * time.Second // 400 *time.Ms
-//    heartbeatInterval  time.Duration = 2 * time.Second // 60 * time.Ms
-//)
-
 const (
     electionTimeoutMin time.Duration = 250 * time.Millisecond // 250*time.Ms
     electionTimeoutMax time.Duration = 400 * time.Millisecond // 400 *time.Ms
     heartbeatInterval  time.Duration = 60 * time.Millisecond  // 60 * time.Ms
 )
+
+//const (
+//    electionTimeoutMin time.Duration = 400 * time.Millisecond // 250*time.Ms
+//    electionTimeoutMax time.Duration = 600 * time.Millisecond // 400 *time.Ms
+//    heartbeatInterval  time.Duration = 200 * time.Millisecond // 60 * time.Ms
+//)
 
 func generateRandomTimeout() time.Duration {
     diff := electionTimeoutMax - electionTimeoutMin
@@ -522,7 +522,7 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
     count := 0
     var cmd interface{} = nil
 
-    LOG(dTest, "nCommited: cfg.log = %v", cfg.logs)
+    LOG(dTest, "logs = %v", cfg.logs)
 
     for i := 0; i < len(cfg.rafts); i++ {
         if cfg.applyErr[i] != "" {
@@ -596,6 +596,8 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
     t0 := time.Now()
     starts := 0
 
+    // Check if we have a leader. If we don't, sleep for a bit, and check again.
+    // If we don't have a leader for 10 seconds, we give up and fail the test.
     for time.Since(t0).Seconds() < 10 && cfg.checkFinished() == false {
 
         index := -1
@@ -622,8 +624,9 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
         }
 
         // at this moment, we have already submitted a command to the leader
+        // in the next 2 seconds, we check if the command is agreed.
+        // If the command is not agreed in 2 seconds, and retry is false, we fail the test.
         if index != -1 {
-            LOG(dTest, "2 seconds to reach an agreement")
 
             // somebody claimed to be the leader and to have
             // submitted our command; wait a while for agreement.
@@ -634,7 +637,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
             // if reply is true, submit the command multiple times
             for time.Since(t1).Seconds() < 2 {
                 nd, cmd1 := cfg.nCommitted(index)
-                LOG(dTest, "nd = %d, cmd = %d", nd, cmd)
+                LOG(dTest, "2-second check: nd = %d, cmd = %v", nd, cmd)
                 // reached an agreement
                 if nd > 0 && nd >= expectedServers {
                     // committed
@@ -649,6 +652,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
             }
 
             if retry == false {
+                LOG(dTest, "one(%v) failed to reach agreement", cmd)
                 cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
             }
 
@@ -660,6 +664,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
     }
 
     if cfg.checkFinished() == false {
+        LOG(dTest, "one(%v) failed to reach agreement", cmd)
         cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
     }
 
