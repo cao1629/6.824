@@ -46,7 +46,7 @@ TOPICS = {
 #     "INFO": "#ffffff",
     "WARN": "#d08341",
 
-    "TICK": "#fe2626",
+    "TIME": "#fe2626",
 }
 # fmt: on
 

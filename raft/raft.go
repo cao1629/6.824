@@ -21,8 +21,6 @@ import (
     //	"bytes"
     "sync"
     "sync/atomic"
-    "time"
-
     //	"6.824/labgob"
     "6.824/labrpc"
 )
@@ -67,19 +65,12 @@ type Raft struct {
     lastApplied int
 
     // two tickers
-    heartbeatTicker *time.Ticker
+    heartbeatTicker *HeartbeatTicker
 
     electionTicker *ElectionTicker
 
     applyCh chan ApplyMsg
     killCh  chan struct{}
-
-    // data members for debugging
-
-    // If I'm a leader, record the moment I call AppendEntriesToOthers
-    // If I'm not a leader, record the moment I call AppendEntries
-    heartbeatClock time.Time
-    electionClock  time.Time
 }
 
 // return currentTerm and whether this server
@@ -102,6 +93,7 @@ func (rf *Raft) GetState() (int, bool) {
 // term. the third return value is true if this server believes it is
 // the leader.
 //
+// #1 I need to check if this one
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
     // Your code here (2B).
     rf.mu.Lock()
@@ -175,9 +167,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
     rf.serverState = Follower
 
-    rf.heartbeatTicker = time.NewTicker(heartbeatInterval)
-    rf.heartbeatTicker.Stop()
-
     rf.nextIndex = make([]int, len(peers))
     rf.matchIndex = make([]int, len(peers))
 
@@ -187,23 +176,19 @@ func Make(peers []*labrpc.ClientEnd, me int,
         {0, 0, false},
     }
 
-    rf.electionTicker = NewElectionTicker()
-    rf.heartbeatClock = time.Now()
+    rf.heartbeatTicker = NewHeartbeatTicker(rf)
+    rf.electionTicker = NewElectionTicker(rf)
     rf.applyCh = applyCh
 
     // Your initialization code here (2A, 2B, 2C).
     go func() {
-        rf.electionClock = time.Now()
         rf.electionTicker.Reset(generateRandomTimeout())
         for {
             select {
             case <-rf.heartbeatTicker.C:
-                LOG(dTicker, "S%d, Term: %d, Heartbeat Timeout, elapse: %v", rf.me, rf.currentTerm, time.Since(rf.heartbeatClock))
-                rf.heartbeatClock = time.Now()
-                rf.AppendEntriesToOthers()
+                go rf.AppendEntriesToOthers()
 
             case <-rf.electionTicker.C:
-                LOG(dElection, "S%d, Term: %d, Election Timeout, elapse: %v", rf.me, rf.currentTerm, time.Since(rf.electionClock))
                 go rf.StartElection()
 
             case <-rf.killCh:
@@ -232,10 +217,9 @@ func (rf *Raft) mayUpdateTerm(term int, from int) bool {
         rf.currentTerm = term
 
         if rf.serverState == Leader {
-            rf.heartbeatTicker.Stop()
+            rf.heartbeatTicker.Pause()
         }
 
-        rf.electionClock = time.Now()
         rf.electionTicker.Reset(generateRandomTimeout())
 
         rf.serverState = Follower

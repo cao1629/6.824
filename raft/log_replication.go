@@ -18,29 +18,31 @@ type AppendEntriesArgs struct {
     PrevLogTerm  int
     Entries      []LogEntry
     LeaderCommit int
+
+    // for debugging
+    InvocationId uint32
 }
 
 type AppendEntriesReply struct {
     Term    int
     Success bool
     Check   bool
+
+    // for debugging
+    InvocationId uint32
 }
 
 // I could be a leader, candidate, or follower.
 // Now I receive an AppendEntries RPC from a self-claimed leader.
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-    LOG(dTicker, "S%d, Term: %d, Received AppendEntriesTo from S%d, elapsed: %v", rf.me, rf.currentTerm, args.LeaderId, time.Since(rf.heartbeatClock))
-    rf.heartbeatClock = time.Now()
-
-    rf.electionClock = time.Now()
-    rf.electionTicker.Reset(generateRandomTimeout())
-
-    LOG(dTicker, "S%d, Term: %d, Reset election ticker after receiving AppendEntries from S%d", rf.me, rf.currentTerm, args.LeaderId)
-    rf.electionClock = time.Now()
-    rf.mu.Lock()
     start := time.Now()
-    defer rf.mu.Unlock()
-    defer LOG(dLog2, "S%d, Term: %d, Duration: %v", rf.me, rf.currentTerm, time.Since(start))
+    LOG(dTime, "S%d, Term: %d, Starting AppendEntries, Sender: S%d, Invocation Id: %d, At: %v",
+        rf.me, rf.currentTerm, args.LeaderId, args.InvocationId, start.UnixMilli())
+
+    defer LOG(dTime, "S%d, Term: %d, Ending AppendEntries, Sender: S%d, Invocation Id: %d, Elapsed: %v",
+        rf.me, rf.currentTerm, args.LeaderId, args.InvocationId, time.Since(start))
+
+    rf.electionTicker.Reset(generateRandomTimeout())
 
     reply.Term = rf.currentTerm
     reply.Success = false
@@ -49,8 +51,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // I received a message from someone with a smaller term.
     // Ignore this message, send back my current term and false.
     if args.Term < rf.currentTerm {
-        LOG(dLog2, "S%d, Term: %d, Result of AppendEntries, Send it to S%d, Success: %t, Reason: ignore messages with smaller term",
-            rf.me, rf.currentTerm, args.LeaderId, reply.Success)
+        LOG(dLog2, "S%d, Term: %d, Ending AppendEntries, Sender: S%d, Invocation Id: %d, Invocation time: %v, "+
+            "Failure, Reason: Ignore messages with smaller term",
+            rf.me, rf.currentTerm, args.LeaderId, args.InvocationId, time.Since(start))
         return
     }
 
@@ -61,9 +64,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
         rf.serverState = Follower
         rf.votedFor = -1
 
-        rf.electionClock = time.Now()
         rf.electionTicker.Reset(generateRandomTimeout())
-
     }
 
     //  Here I must be a follower with the most up-to-date term.
@@ -71,15 +72,18 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // Check if log matches.
     // (a) my log is shorter than the leader's log
     if args.PrevLogIndex >= len(rf.log) {
-        LOG(dLog2, "S%d, Term: %d, Result of AppendEntries, Send it to S%d, Success: %t, Reason: my log is shorter than the leader's log",
-            rf.me, rf.currentTerm, args.LeaderId, reply.Success)
+        LOG(dLog2, "S%d, Term: %d, Ending AppendEntries, Sender: S%d, Invocation Id: %d, Invocation time: %v, "+
+            "Failure, My log is shorter than the leader's log",
+            rf.me, rf.currentTerm, args.LeaderId, args.InvocationId, time.Since(start))
         return
     }
 
     // (b) term does not match
     if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
-        LOG(dLog2, "S%d, Term: %d, Result of AppendEntries, Send it to S%d, Success: false, Reason: term does not match",
-            rf.me, rf.currentTerm, args.LeaderId)
+        LOG(dLog2, "S%d, Term: %d, Ending AppendEntries, Sender: S%d, Invocation Id: %d, Invocation time: %v, "+
+            "Failure, Reason: Term does not match",
+            rf.me, rf.currentTerm, args.LeaderId, args.InvocationId, time.Since(start))
+
         return
     }
 
@@ -105,7 +109,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
     // Success
     reply.Success = true
-    LOG(dLog2, "S%d, Term: %d, Result of AppendEntries, Send it to S%d, Success: true, Log: %v", rf.me, rf.currentTerm, args.LeaderId, rf.log)
+    LOG(dLog2, "S%d, Term: %d, Ending AppendEntries, Sender: S%d, Invocation Id: %d, Invocation time %v, Success, Log: %v",
+        rf.me, rf.currentTerm, args.LeaderId, args.InvocationId, time.Since(start), rf.log)
 }
 
 func (rf *Raft) findCommitIndex() int {
@@ -124,12 +129,17 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // sync
 // Now I'm a leader. I'm sending AppendEntries RPC to one peer.
 func (rf *Raft) AppendEntriesTo(peer int) {
+    start := time.Now()
 
     rf.mu.Lock()
-    expectedTerm := rf.currentTerm
+    newInvocationId := appendEntriesInvocationId.Add(1)
+    LOG(dLog1, "S%d, Term: %d, Starting Append EntriesTo to S%d, Invocation Id: %d, Log Length: %d, Commit Index: %d, PrevLogIndex: %d, NextIndex: %d, EntriesToSend: %v, Log: %v",
+        rf.me, rf.currentTerm, peer, newInvocationId, len(rf.log), rf.commitIndex, rf.nextIndex[peer]-1, rf.nextIndex[peer], rf.log[rf.nextIndex[peer]:], rf.log)
 
-    LOG(dLog1, "S%d, Starting Append Entries to S%d, Term: %d, Log Length: %d, PrevLogIndex: %d, NextIndex: %d, EntriesToSend: %v, Log: %v",
-        rf.me, peer, rf.currentTerm, len(rf.log), rf.nextIndex[peer]-1, rf.nextIndex[peer], rf.log[rf.nextIndex[peer]:], rf.log)
+    defer LOG(dLog1, "S%d, Term: %d, Ending AppendEntriesTo to S%d, InvocationId: %d, invocation time %v",
+        rf.me, rf.currentTerm, peer, newInvocationId, time.Since(start))
+
+    expectedTerm := rf.currentTerm
 
     args := AppendEntriesArgs{
         Term:         rf.currentTerm,
@@ -138,6 +148,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
         PrevLogTerm:  rf.log[rf.nextIndex[peer]-1].Term,
         Entries:      rf.log[rf.nextIndex[peer]:],
         LeaderCommit: rf.commitIndex,
+        InvocationId: newInvocationId,
     }
 
     rf.mu.Unlock()
@@ -150,6 +161,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     defer rf.mu.Unlock()
 
     if !reply.Check {
+        LOG(dLog1, "S%d, Term: %d, Wrong invocation, Invocation Id: %d", rf.me, rf.currentTerm, newInvocationId)
         return
     }
 

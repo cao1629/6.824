@@ -24,8 +24,8 @@ import "time"
 import "fmt"
 
 const (
-    electionTimeoutMin time.Duration = 250 * time.Millisecond // 250*time.Ms
-    electionTimeoutMax time.Duration = 400 * time.Millisecond // 400 *time.Ms
+    electionTimeoutMin time.Duration = 500 * time.Millisecond // 250*time.Ms
+    electionTimeoutMax time.Duration = 600 * time.Millisecond // 400 *time.Ms
     heartbeatInterval  time.Duration = 60 * time.Millisecond  // 60 * time.Ms
 )
 
@@ -405,8 +405,6 @@ func (cfg *config) connect(i int) {
 
 // detach server i from the net.
 func (cfg *config) disconnect(i int) {
-    // fmt.Printf("disconnect(%d)\n", i)
-
     cfg.connected[i] = false
 
     // outgoing ClientEnds
@@ -522,7 +520,7 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
     count := 0
     var cmd interface{} = nil
 
-    LOG(dTest, "logs = %v", cfg.logs)
+    LOG(dTest, "nCommited: logs = %v index=%d", cfg.logs, index)
 
     for i := 0; i < len(cfg.rafts); i++ {
         if cfg.applyErr[i] != "" {
@@ -637,7 +635,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
             // if reply is true, submit the command multiple times
             for time.Since(t1).Seconds() < 2 {
                 nd, cmd1 := cfg.nCommitted(index)
-                LOG(dTest, "2-second check: nd = %d, cmd = %v", nd, cmd)
+                //LOG(dTest, "2-second check: nd = %d, cmd = %v", nd, cmd)
                 // reached an agreement
                 if nd > 0 && nd >= expectedServers {
                     // committed

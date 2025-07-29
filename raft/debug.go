@@ -3,6 +3,7 @@ package raft
 import (
     "fmt"
     "log"
+    "sync/atomic"
     "time"
 )
 
@@ -15,6 +16,10 @@ import (
 //    }
 //    return
 //}
+
+var (
+    appendEntriesInvocationId atomic.Uint32
+)
 
 type logTopic string
 
@@ -47,7 +52,7 @@ const (
 
     dElection logTopic = "ELEC"
 
-    dTicker logTopic = "TICK"
+    dTime logTopic = "TIME"
 
     dHeartbeat logTopic = "HERT"
 )
