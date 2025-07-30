@@ -635,7 +635,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
             // if reply is true, submit the command multiple times
             for time.Since(t1).Seconds() < 2 {
                 nd, cmd1 := cfg.nCommitted(index)
-                //LOG(dTest, "2-second check: nd = %d, cmd = %v", nd, cmd)
+                // LOG(dTest, "2-second check: nd = %d, cmd = %v", nd, cmd)
                 // reached an agreement
                 if nd > 0 && nd >= expectedServers {
                     // committed

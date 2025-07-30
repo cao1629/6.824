@@ -15,14 +15,9 @@ import (
     "sync"
 )
 
-// 用来模拟 disk  non-volatile的东西不存到disk上  存到Persister里面
-// when a Raft peer crashes, it loses its volatile state, but retains its
-// persistent state in Persister.
-//
-// When a Raft peer is restarted, it can recover its persistent state
-// from the Persister.
-//
-// 每一个 Raft peer 都有一个 Persister
+// Simulate disk storage. Each Raft server has a Persister.
+// When a Raft server crashes, it loses its volatile states but things in its Persister.
+// When this Raft server is back, it recovers its persistent state from itws Persister.
 type Persister struct {
     mu        sync.Mutex
     raftstate []byte
@@ -39,7 +34,7 @@ func clone(orig []byte) []byte {
     return x
 }
 
-// move in c++
+// Like "move" in C++
 func (ps *Persister) Copy() *Persister {
     ps.mu.Lock()
     defer ps.mu.Unlock()
@@ -49,7 +44,7 @@ func (ps *Persister) Copy() *Persister {
     return np
 }
 
-// raft peer -> encode -> []byte
+// before calling this method: raft server -> encode -> []byte
 // []byte -> persister
 func (ps *Persister) SaveRaftState(state []byte) {
     ps.mu.Lock()
@@ -58,7 +53,7 @@ func (ps *Persister) SaveRaftState(state []byte) {
 }
 
 // persister -> []byte
-// []byte -> decode -> raft peer
+// after calling this method: []byte -> decode -> raft server
 func (ps *Persister) ReadRaftState() []byte {
     ps.mu.Lock()
     defer ps.mu.Unlock()
@@ -71,33 +66,12 @@ func (ps *Persister) RaftStateSize() int {
     return len(ps.raftstate)
 }
 
-// Save both Raft state and K/V snapshot as a single atomic action,
-// to help avoid them getting out of sync.
-func (ps *Persister) SaveStateAndSnapshot(state []byte, snapshot []byte) {
-    ps.mu.Lock()
-    defer ps.mu.Unlock()
-    ps.raftstate = clone(state)
-    ps.snapshot = clone(snapshot)
-}
-
-func (ps *Persister) ReadSnapshot() []byte {
-    ps.mu.Lock()
-    defer ps.mu.Unlock()
-    return clone(ps.snapshot)
-}
-
-func (ps *Persister) SnapshotSize() int {
-    ps.mu.Lock()
-    defer ps.mu.Unlock()
-    return len(ps.snapshot)
-}
-
 //
 // save Raft's persistent state to stable storage,
 // where it can later be retrieved after a crash and restart.
 // see paper's Figure 2 for a description of what should be persistent.
 //
-// raft peer -> encode -> []byte -> persister
+// raft server -> encode -> []byte -> persister
 func (rf *Raft) persist() {
     // Your code here (2C).
     // Example:
@@ -107,6 +81,7 @@ func (rf *Raft) persist() {
     // e.Encode(rf.yyy)
     // data := w.Bytes()
     // rf.persister.SaveRaftState(data)
+
     w := new(bytes.Buffer)
     e := labgob.NewEncoder(w)
     e.Encode(rf.currentTerm)
@@ -150,24 +125,4 @@ func (rf *Raft) readPersist(data []byte) {
     rf.votedFor = votedFor
     d.Decode(&log)
     rf.log = log
-}
-
-//
-// A service wants to switch to snapshot.  Only do so if Raft hasn't
-// have more recent info since it communicate the snapshot on applyCh.
-//
-func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int, snapshot []byte) bool {
-
-    // Your code here (2D).
-
-    return true
-}
-
-// the service says it has created a snapshot that has
-// all info up to and including index. this means the
-// service no longer needs the log through (and including)
-// that index. Raft should now trim its log as much as possible.
-func (rf *Raft) Snapshot(index int, snapshot []byte) {
-    // Your code here (2D).
-
 }
