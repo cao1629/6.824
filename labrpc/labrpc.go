@@ -23,23 +23,6 @@ package labrpc
 // net.Enable(endname, enabled) -- enable/disable a client.
 // net.Reliable(bool) -- false means drop/delay messages
 //
-// end.Call("Raft.AppendEntries", &args, &reply) -- send an RPC, wait for reply.
-// the "Raft" is the name of the server struct to be called.
-// the "AppendEntries" is the name of the method to be called.
-// Call() returns true to indicate that the server executed the request
-// and the reply is valid.
-// Call() returns false if the network lost the request or reply
-// or the server is down.
-// It is OK to have multiple Call()s in progress at the same time on the
-// same ClientEnd.
-// Concurrent calls to Call() may be delivered to the server out of order,
-// since the network may re-order messages.
-// Call() is guaranteed to return (perhaps after a delay) *except* if the
-// handler function on the server side does not return.
-// the server RPC handler function must declare its args and reply arguments
-// as pointers, so that their types exactly match the types of the arguments
-// to Call().
-//
 // srv := MakeServer()
 // srv.AddService(svc) -- a server can have multiple services, e.g. Raft and k/v
 //   pass srv to net.AddServer()
@@ -78,12 +61,29 @@ type ClientEnd struct {
     done    chan struct{} // closed when Network is cleaned up
 }
 
-// send an RPC, wait for the reply.
-// the return value indicates success; false means that
-// no reply was received from the server.
+// sync
+// end.Call("Raft.AppendEntries", &args, &reply) -- send an RPC, wait for reply.
+// the "Raft" is the name of the server struct to be called.
 //
-// synchronously sends a request to the server and waits for the reply.
+// the "AppendEntries" is the name of the method to be called.
+//
+// Call() returns true to indicate that the server executed the request
+// and the reply is valid.
+// Call() returns false if the network lost the request or reply
+// or the server is down.
+//
+// It is OK to have multiple Call()s in progress at the same time on the
+// same ClientEnd.
+// Concurrent calls to Call() may be delivered to the server out of order,
+// since the network may re-order messages.
+//
+// Call() is guaranteed to return (perhaps after a delay) *except* if the
+// handler function on the server side does not return.
+// the server RPC handler function must declare its args and reply arguments
+// as pointers, so that their types exactly match the types of the arguments
+// to Call().
 func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bool {
+    // assemble the request
     req := reqMsg{}
     req.endname = e.endname
     req.svcMeth = svcMeth
@@ -97,22 +97,15 @@ func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bo
     }
     req.args = qb.Bytes()
 
-    //
-    // send the request.
-    //
+    // send the request to the Network.endCh
     select {
     case e.ch <- req:
-        // the request has been sent.
-        // 把一个 req 送到一个 chan reqMsg里
     case <-e.done:
         // entire Network has been destroyed.
         return false
     }
 
-    //
-    // wait for the reply.
-    // req里面有一个 chan replyMsg  block等待
-    //
+    // wait for req.replyCh to receive the reply
     rep := <-req.replyCh
     if rep.ok {
         rb := bytes.NewBuffer(rep.reply)
@@ -151,7 +144,8 @@ func MakeNetwork() *Network {
     rn.endCh = make(chan reqMsg)
     rn.done = make(chan struct{})
 
-    // single goroutine to handle all ClientEnd.Call()s
+    // single goroutine to receive all RPC requests
+    // then start a goroutine to process each request
     go func() {
         for {
             select {
@@ -209,6 +203,8 @@ func (rn *Network) readEndnameInfo(endname interface{}) (enabled bool,
     return
 }
 
+// I don't see places where rn.Enable() is called with false.
+// so I see this method as a way to check if DeleteServer() has been called.
 func (rn *Network) isServerDead(endname interface{}, servername interface{}, server *Server) bool {
     rn.mu.Lock()
     defer rn.mu.Unlock()
@@ -216,13 +212,20 @@ func (rn *Network) isServerDead(endname interface{}, servername interface{}, ser
     if rn.enabled[endname] == false || rn.servers[servername] != server {
         return true
     }
+
     return false
 }
 
-// 处理req 把结果送到req.replyCh里
+// process a request
+// send reply to req.replyCh
 func (rn *Network) processReq(req reqMsg) {
+
+    // When we have an RPC request, we know the endname, servername, and its server.
+    // If we find out that server is nil later on, DeleteServer() must have been called.
     enabled, servername, server, reliable, longreordering := rn.readEndnameInfo(req.endname)
 
+    // servername is nil: the end is not connected to a server.
+    // server is nil: the server has been deleted.
     if enabled && servername != nil && server != nil {
         if reliable == false {
             // short delay
@@ -230,6 +233,7 @@ func (rn *Network) processReq(req reqMsg) {
             time.Sleep(time.Duration(ms) * time.Millisecond)
         }
 
+        // if the network is unreliable, then 1/10 chance of dropping the request and return timeout.
         if reliable == false && (rand.Int()%1000) < 100 {
             // drop the request, return as if timeout
             req.replyCh <- replyMsg{false, nil}
@@ -240,40 +244,39 @@ func (rn *Network) processReq(req reqMsg) {
         // in a separate thread so that we can periodically check
         // if the server has been killed and the RPC should get a
         // failure reply.
-        //
-        // go的future
-        // 留一个channel 然后开一个goroutine 里面得到结果了把结果送进这个channel
-        // 后面再从这个channel里取结果
         ech := make(chan replyMsg)
 
+        // what if we do not start a goroutine here?
+        // we would not be able to handle the case where serverDead becomes true during the wait.
         go func() {
-
             r := server.dispatch(req)
-
-            // 执行完了 有了replyMsg 送进ech
             ech <- r
         }()
 
         // wait for handler to return,
         // but stop waiting if DeleteServer() has been called,
         // and return an error.
-        // 从ech取到结果之后 送到reqMsg里面的replyCh里
         var reply replyMsg
         replyOK := false
         serverDead := false
+
         for replyOK == false && serverDead == false {
             select {
             case reply = <-ech:
                 replyOK = true
             case <-time.After(100 * time.Millisecond):
+                // check if server is dead every 100ms.
+                // If it is, drain ech to let the goroutine created earlier terminate
                 serverDead = rn.isServerDead(req.endname, servername, server)
                 if serverDead {
                     go func() {
-                        <-ech // drain channel to let the goroutine created earlier terminate
+                        <-ech
                     }()
                 }
             }
         }
+
+        // At this moment, if replyOk is true, we already have a replyMsg.
 
         // do not reply if DeleteServer() has been called, i.e.
         // the server has been killed. this is needed to avoid
@@ -287,9 +290,12 @@ func (rn *Network) processReq(req reqMsg) {
             // server was killed while we were waiting; return error.
             req.replyCh <- replyMsg{false, nil}
         } else if reliable == false && (rand.Int()%1000) < 100 {
+            // replyOk is true, but we simulate a lost reply.
+            // RPC frameworks usually have timeout mechanisms. When timeout happens, we will have a timeout reply.
             // drop the reply, return as if timeout
             req.replyCh <- replyMsg{false, nil}
         } else if longreordering == true && rand.Intn(900) < 600 {
+            // replyOk is true, but we simulate a long delay.
             // delay the response for a while
             ms := 200 + rand.Intn(1+rand.Intn(2000))
             // Russ points out that this timer arrangement will decrease
@@ -303,9 +309,11 @@ func (rn *Network) processReq(req reqMsg) {
             atomic.AddInt64(&rn.bytes, int64(len(reply.reply)))
             req.replyCh <- reply
         }
+
     } else {
         // simulate no reply and eventual timeout.
         ms := 0
+
         if rn.longDelays {
             // let Raft tests check that leader doesn't send
             // RPCs synchronously.
@@ -315,11 +323,11 @@ func (rn *Network) processReq(req reqMsg) {
             // server in fairly rapid succession.
             ms = (rand.Int() % 100)
         }
+
         time.AfterFunc(time.Duration(ms)*time.Millisecond, func() {
             req.replyCh <- replyMsg{false, nil}
         })
     }
-
 }
 
 // create a client end-point.
@@ -367,6 +375,8 @@ func (rn *Network) Connect(endname interface{}, servername interface{}) {
 }
 
 // enable/disable a ClientEnd.
+// What happens when a ClientEnd is disabled?
+// If a ClientEnd is disabled, then IsServerDead() will return true
 func (rn *Network) Enable(endname interface{}, enabled bool) {
     rn.mu.Lock()
     defer rn.mu.Unlock()
@@ -416,6 +426,7 @@ func (rs *Server) AddService(svc *Service) {
     rs.services[svc.name] = svc
 }
 
+// sync
 func (rs *Server) dispatch(req reqMsg) replyMsg {
     rs.mu.Lock()
 
@@ -489,6 +500,8 @@ func MakeService(rcvr interface{}) *Service {
     return svc
 }
 
+// sync, rpc invocation
+// methodName, arg -> reply
 func (svc *Service) dispatch(methname string, req reqMsg) replyMsg {
     if method, ok := svc.methods[methname]; ok {
         // prepare space into which to read the argument.
