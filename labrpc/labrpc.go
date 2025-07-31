@@ -264,6 +264,7 @@ func (rn *Network) processReq(req reqMsg) {
             select {
             case reply = <-ech:
                 replyOK = true
+
             case <-time.After(100 * time.Millisecond):
                 // check if server is dead every 100ms.
                 // If it is, drain ech to let the goroutine created earlier terminate

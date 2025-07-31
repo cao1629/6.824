@@ -155,8 +155,6 @@ func (rf *Raft) AppendEntriesTo(peer int) {
 
     reply := AppendEntriesReply{}
 
-    rf.sendAppendEntries(peer, &args, &reply)
-
     rf.mu.Lock()
     defer rf.mu.Unlock()
 
