@@ -23,19 +23,19 @@ func logRpc(caller int, callee int, isCaller bool, reply bool, rpcName string, t
     }
     b.WriteString(fmt.Sprintf("[%d %02d] ", server, term))
     if isCaller {
-        b.WriteString(fmt.Sprintf("[%s %04d *%d -> %d] ", rpcName, rpcId, caller, callee))
+        b.WriteString(fmt.Sprintf("[%-15s %04d *%d -> %d] ", rpcName, rpcId, caller, callee))
     } else {
-        b.WriteString(fmt.Sprintf("[%s %04d %d -> *%d] ", rpcName, rpcId, caller, callee))
+        b.WriteString(fmt.Sprintf("[%-15s %04d %d -> *%d] ", rpcName, rpcId, caller, callee))
     }
 
     if isCaller {
         if !reply {
-            b.WriteString(fmt.Sprintf("RPC_ARGS: "))
+            b.WriteString(fmt.Sprintf("%-12s", "RPC_ARGS: "))
         } else {
-            b.WriteString(fmt.Sprintf("RPC_REPLY: "))
+            b.WriteString(fmt.Sprintf("%-12s", "RPC_REPLY: "))
         }
     } else {
-        b.WriteString(fmt.Sprintf("LOCAL: "))
+        b.WriteString(fmt.Sprintf("%-12s", "LOCAL: "))
     }
 
     for k, v := range detail {
