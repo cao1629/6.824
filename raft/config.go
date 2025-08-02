@@ -489,7 +489,6 @@ func (cfg *config) checkTerms() int {
     for i := 0; i < cfg.n; i++ {
         if cfg.connected[i] {
             xterm, _ := cfg.rafts[i].GetState()
-            LOG(dDebug, "checkTerms, S%d: term %d", i, xterm)
             if term == -1 {
                 term = xterm
             } else if term != xterm {
@@ -519,8 +518,6 @@ func (cfg *config) checkNoLeader() {
 func (cfg *config) nCommitted(index int) (int, interface{}) {
     count := 0
     var cmd interface{} = nil
-
-    LOG(dTest, "nCommited: logs = %v index=%d", cfg.logs, index)
 
     for i := 0; i < len(cfg.rafts); i++ {
         if cfg.applyErr[i] != "" {
@@ -582,14 +579,11 @@ func (cfg *config) wait(index int, n int, startTerm int) interface{} {
 // same value, since nCommitted() checks this,
 // as do the threads that read from applyCh.
 // returns index.
+//
 // if retry==true, may submit the command multiple
 // times, in case a leader fails just after Start().
 // if retry==false, calls Start() only once, in order
 // to simplify the early Lab 2B tests.
-//
-// retry: we already have a leader. we submit the command to the leader, and find out
-//
-//
 func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
     t0 := time.Now()
     starts := 0
@@ -602,7 +596,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 
         // try all the servers, maybe one is the leader.
         for si := 0; si < cfg.n; si++ {
-            // starts = 1, 2, 3
+            // starts = 1, 2, 0
             starts = (starts + 1) % cfg.n
             var rf *Raft
             cfg.mu.Lock()
@@ -650,19 +644,16 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
             }
 
             if retry == false {
-                LOG(dTest, "one(%v) failed to reach agreement", cmd)
                 cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
             }
 
         } else {
             // no one is the leader
-            LOG(dTest, "no one is the leader. need more time.")
             time.Sleep(50 * time.Millisecond)
         }
     }
 
     if cfg.checkFinished() == false {
-        LOG(dTest, "one(%v) failed to reach agreement", cmd)
         cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
     }
 

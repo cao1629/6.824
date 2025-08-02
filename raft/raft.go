@@ -100,7 +100,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
     defer rf.mu.Unlock()
 
     if rf.serverState != Leader {
-        LOG(dLog1, "S%d, Term: %d, Submit a command on a server which is not a leader", rf.me, rf.currentTerm)
         return 0, 0, false
     }
 
@@ -114,7 +113,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
     rf.persist()
 
-    LOG(dLog1, "S%d, Term: %d, Submit command %v", rf.me, rf.currentTerm, command)
     return len(rf.log) - 1, rf.currentTerm, true
 }
 
@@ -156,8 +154,6 @@ func (rf *Raft) killed() bool {
 //
 func Make(peers []*labrpc.ClientEnd, me int,
     persister *Persister, applyCh chan ApplyMsg) *Raft {
-
-    LOG(dInfo, "S%d, Starting...", me)
 
     rf := &Raft{}
     rf.peers = peers
@@ -211,8 +207,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 // If I'm currently a candidate, I reset the election ticker.
 func (rf *Raft) mayUpdateTerm(term int, from int) bool {
     if term > rf.currentTerm {
-        oldTerm := rf.currentTerm
-        oldState := rf.serverState
 
         rf.currentTerm = term
 
@@ -223,9 +217,6 @@ func (rf *Raft) mayUpdateTerm(term int, from int) bool {
         rf.electionTicker.Reset(generateRandomTimeout())
 
         rf.serverState = Follower
-
-        LOG(dState, "S%d, Term: %d -> %d, State: %s -> %s, Reason: learned a higher term from S%d",
-            rf.me, oldTerm, rf.currentTerm, oldState, rf.serverState, from)
 
         rf.votedFor = -1
 

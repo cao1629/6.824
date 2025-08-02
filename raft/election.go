@@ -13,7 +13,7 @@ type RequestVoteArgs struct {
     LastLogTerm  int
 
     // for debugging
-    InvocationId int
+    RpcId uint32
 }
 
 //
@@ -26,7 +26,7 @@ type RequestVoteReply struct {
     VoteGranted bool
 
     // for debugging
-    InvocationId int
+    RpcId int
 }
 
 //
@@ -35,24 +35,22 @@ type RequestVoteReply struct {
 // I receive a RequestVote RPC from a candidate.
 // I could be a leader, candidate, or a follower.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-    LOG(dVote, "S%d, Term: %d, Received Vote Request from S%d", rf.me, rf.currentTerm, args.CandidateId)
-
-    //LOG(dDebug, "S%d, Term: %d, Starting processing RequestVote from S%d", rf.me, rf.currentTerm, args.CandidateId)
     rf.mu.Lock()
-    //defer LOG(dDebug, "S%d, Term: %d, Finished processing RequestVote from S%d", rf.me, rf.currentTerm, args.CandidateId)
     defer rf.mu.Unlock()
 
     // Your code here (2A, 2B).
-    //LOG(dVote, "S%d, Term: %d, Voting for S%d", rf.me, rf.currentTerm, args.CandidateId)
-
     reply.Term = rf.currentTerm
     reply.VoteGranted = false
 
     // I received a message from someone with a smaller term.
     // Ignore this message, send back my current term and false.
     if rf.currentTerm > args.Term {
-        LOG(dVote, "S%d, Term %d, Vote false for S%d, Reason: Ignore messages with smaller term",
-            rf.me, rf.currentTerm, args.CandidateId)
+        detail := map[string]interface{}{
+            "Term":    rf.currentTerm,
+            "Success": false,
+            "Reason":  "Ignore messages with smaller term",
+        }
+        logRpc(args.CandidateId, rf.me, false, false, "REQUEST_VOTE", rf.currentTerm, args.RpcId, detail)
         return
     }
 
@@ -80,8 +78,12 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
     }
 
     if !upToDateCandidate {
-        LOG(dVote, "S%d, Term: %d, Vote false for S%d, Reason: Candidate's log is not up-to-date",
-            rf.me, rf.currentTerm, args.CandidateId)
+        detail := map[string]interface{}{
+            "Term":    rf.currentTerm,
+            "Success": false,
+            "Reason":  "Out-of-data log",
+        }
+        logRpc(args.CandidateId, rf.me, false, false, "REQUEST_VOTE", rf.currentTerm, args.RpcId, detail)
         return
     }
 
@@ -91,8 +93,12 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
         reply.VoteGranted = true
     } else {
         // I have already voted for someone in this term.
-        LOG(dVote, "S%d, Term: %d, Vote false for S%d, Reason: Already voted for S%d in this term",
-            rf.me, rf.currentTerm, args.CandidateId, rf.votedFor)
+        detail := map[string]interface{}{
+            "Term":    rf.currentTerm,
+            "Success": false,
+            "Reason":  "Voted",
+        }
+        logRpc(args.CandidateId, rf.me, false, false, "REQUEST_VOTE", rf.currentTerm, args.RpcId, detail)
     }
 }
 
@@ -145,12 +151,9 @@ func (rf *Raft) isContextLost(expectedSeverState ServerState, term int) bool {
 
 func (rf *Raft) StartElection() {
     rf.mu.Lock()
-    oldTerm := rf.currentTerm
-    oldState := rf.serverState
     rf.currentTerm++
     rf.serverState = Candidate
     rf.votedFor = rf.me
-    LOG(dState, "S%d, Term: %d -> %d, State: %s -> %s, Reason: timeout", rf.me, oldTerm, rf.currentTerm, oldState, rf.serverState)
     rf.persist()
 
     rf.electionTicker.Reset(generateRandomTimeout())
@@ -168,9 +171,7 @@ func (rf *Raft) StartElection() {
 
         peer := i
         go func() {
-            LOG(dElection, "S%d, Term: %d, Request Vote from S%d", rf.me, rf.currentTerm, peer)
             voteGranted := rf.RequestVoteFrom(peer)
-            LOG(dElection, "S%d, Term: %d, Vote from S%d: %t", rf.me, rf.currentTerm, peer, voteGranted)
             voteGrantedCh <- voteGranted
         }()
     }
@@ -200,8 +201,6 @@ func (rf *Raft) StartElection() {
                         // I have enough votes to become a leader.
                         // Stop the election ticker and start the heartbeat ticker.
                         // Break this "for select loop" to ignore the remaining votes.
-                        LOG(dElection, "S%d, Term: %d, Won election", rf.me, rf.currentTerm)
-                        LOG(dState, "S%d, Term: %d, State: %s -> %s", rf.me, rf.currentTerm, rf.serverState, Leader)
                         rf.serverState = Leader
                         for i := range rf.peers {
                             rf.nextIndex[i] = len(rf.log)
@@ -227,18 +226,34 @@ func (rf *Raft) StartElection() {
 // sync
 // If the peer grants my vote, return true. Otherwise return false.
 func (rf *Raft) RequestVoteFrom(peer int) bool {
-
+    rf.mu.Lock()
     args := RequestVoteArgs{
         Term:         rf.currentTerm,
         CandidateId:  rf.me,
         LastLogIndex: len(rf.log) - 1,
         LastLogTerm:  rf.log[len(rf.log)-1].Term,
+        RpcId:        rpcId.Add(1),
     }
 
     reply := RequestVoteReply{}
+
+    detail := map[string]interface{}{
+        "LastLogIdx":  args.LastLogIndex,
+        "LastLogTerm": args.LastLogTerm,
+    }
+    logRpc(rf.me, peer, true, false, "REQUEST_VOTE", rf.currentTerm, args.RpcId, detail)
+
+    rf.mu.Unlock()
+
     if ok := rf.sendRequestVote(peer, &args, &reply); !ok {
         return false
     }
+
+    detail = map[string]interface{}{
+        "Term":    reply.Term,
+        "Success": reply.VoteGranted,
+    }
+    logRpc(rf.me, peer, true, true, "REQUEST_VOTE", rf.currentTerm, args.RpcId, detail)
 
     rf.mu.Lock()
     defer rf.mu.Unlock()

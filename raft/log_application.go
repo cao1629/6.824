@@ -47,6 +47,5 @@ func (rf *Raft) Apply() {
         }
     }
 
-    LOG(dApply, "S%d, Term: %d, Apply log from index %d to %d", rf.me, rf.currentTerm, rf.lastApplied+1, rf.commitIndex)
     rf.lastApplied = rf.commitIndex
 }

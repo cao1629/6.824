@@ -68,8 +68,6 @@ func NewHeartbeatTicker(rf *Raft) *HeartbeatTicker {
             case tick := <-heartbeat.ticker.C:
                 heartbeat.mu.Lock()
                 if heartbeat.ticking {
-                    LOG(dTime, "S%d, Term: %d, Heartbeat ticks at %v",
-                        heartbeat.rf.me, heartbeat.rf.currentTerm, tick.UnixMilli())
                     heartbeat.C <- tick
                 }
                 heartbeat.mu.Unlock()

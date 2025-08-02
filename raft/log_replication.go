@@ -2,7 +2,6 @@ package raft
 
 import (
     "sort"
-    "time"
 )
 
 type LogEntry struct {
@@ -20,40 +19,36 @@ type AppendEntriesArgs struct {
     LeaderCommit int
 
     // for debugging
-    InvocationId uint32
+    RpcId uint32
 }
 
 type AppendEntriesReply struct {
     Term    int
     Success bool
-    Check   bool
 
     // for debugging
-    InvocationId uint32
+    RpcId uint32
 }
 
 // I could be a leader, candidate, or follower.
 // Now I receive an AppendEntries RPC from a self-claimed leader.
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-    start := time.Now()
-    LOG(dTime, "S%d, Term: %d, Starting AppendEntries, Sender: S%d, Invocation Id: %d, At: %v",
-        rf.me, rf.currentTerm, args.LeaderId, args.InvocationId, start.UnixMilli())
-
-    defer LOG(dTime, "S%d, Term: %d, Ending AppendEntries, Sender: S%d, Invocation Id: %d, Elapsed: %v",
-        rf.me, rf.currentTerm, args.LeaderId, args.InvocationId, time.Since(start))
 
     rf.electionTicker.Reset(generateRandomTimeout())
 
     reply.Term = rf.currentTerm
     reply.Success = false
-    reply.Check = true
 
     // I received a message from someone with a smaller term.
     // Ignore this message, send back my current term and false.
     if args.Term < rf.currentTerm {
-        LOG(dLog2, "S%d, Term: %d, Ending AppendEntries, Sender: S%d, Invocation Id: %d, Invocation time: %v, "+
-            "Failure, Reason: Ignore messages with smaller term",
-            rf.me, rf.currentTerm, args.LeaderId, args.InvocationId, time.Since(start))
+        detail := map[string]interface{}{
+            "Term":    rf.currentTerm,
+            "Success": false,
+            "Reason":  "Ignore",
+        }
+
+        logRpc(args.LeaderId, rf.me, false, false, "APPEND_ENTRIES", rf.currentTerm, args.RpcId, detail)
         return
     }
 
@@ -72,36 +67,41 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // Check if log matches.
     // (a) my log is shorter than the leader's log
     if args.PrevLogIndex >= len(rf.log) {
-        LOG(dLog2, "S%d, Term: %d, Ending AppendEntries, Sender: S%d, Invocation Id: %d, Invocation time: %v, "+
-            "Failure, My log is shorter than the leader's log",
-            rf.me, rf.currentTerm, args.LeaderId, args.InvocationId, time.Since(start))
+
+        detail := map[string]interface{}{
+            "Term":    rf.currentTerm,
+            "Success": false,
+            "Reason":  "Short log",
+        }
+        logRpc(args.LeaderId, rf.me, false, false, "APPEND_ENTRIES", rf.currentTerm, args.RpcId, detail)
         return
     }
 
     // (b) term does not match
     if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
-        LOG(dLog2, "S%d, Term: %d, Ending AppendEntries, Sender: S%d, Invocation Id: %d, Invocation time: %v, "+
-            "Failure, Reason: Term does not match",
-            rf.me, rf.currentTerm, args.LeaderId, args.InvocationId, time.Since(start))
+        detail := map[string]interface{}{
+            "Term":    rf.currentTerm,
+            "Success": false,
+            "Reason":  "Wrong term",
+        }
+
+        logRpc(args.LeaderId, rf.me, false, false, "APPEND_ENTRIES", rf.currentTerm, args.RpcId, detail)
 
         return
     }
 
     // Append entries to my log.
     if len(args.Entries) != 0 {
-        LOG(dLog2, "S%d, Term: %d, Append %d Entries to my log: %v", rf.me, rf.currentTerm, len(args.Entries), args.Entries)
         rf.log = append(rf.log[:args.PrevLogIndex+1], args.Entries...)
     }
 
     // Try to update commitIndex
     if args.LeaderCommit > rf.commitIndex {
-        oldCommitIndex := rf.commitIndex
         if args.LeaderCommit > len(rf.log)-1 {
             rf.commitIndex = len(rf.log) - 1
         } else {
             rf.commitIndex = args.LeaderCommit
         }
-        LOG(dLog2, "S%d, Term: %d, Commit Index: %d -> %d", rf.me, rf.currentTerm, oldCommitIndex, rf.commitIndex)
 
         // When commitIndex is updated, we need to apply log[lastApplied+1 : commitIndex] to the state machine
         go rf.Apply()
@@ -109,12 +109,15 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
     // Success
     reply.Success = true
-    LOG(dLog2, "S%d, Term: %d, Ending AppendEntries, Sender: S%d, Invocation Id: %d, Invocation time %v, Success, Log: %v",
-        rf.me, rf.currentTerm, args.LeaderId, args.InvocationId, time.Since(start), rf.log)
+    detail := map[string]interface{}{
+        "Term":    rf.currentTerm,
+        "Success": true,
+        "Log":     rf.log,
+    }
+    logRpc(args.LeaderId, rf.me, false, false, "APPEND_ENTRIES", rf.currentTerm, args.RpcId, detail)
 }
 
 func (rf *Raft) findCommitIndex() int {
-    LOG(dLog1, "S%d, Term: %d, Finding Commit Index, Match Index: %v", rf.me, rf.currentTerm, rf.matchIndex)
     tmpMatchIndex := make([]int, len(rf.matchIndex))
     copy(tmpMatchIndex, rf.matchIndex)
     sort.Ints(tmpMatchIndex)
@@ -129,16 +132,8 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // sync
 // Now I'm a leader. I'm sending AppendEntries RPC to one peer.
 func (rf *Raft) AppendEntriesTo(peer int) {
-    start := time.Now()
 
     rf.mu.Lock()
-    newInvocationId := appendEntriesInvocationId.Add(1)
-    LOG(dLog1, "S%d, Term: %d, Starting Append EntriesTo to S%d, Invocation Id: %d, Log Length: %d, Commit Index: %d, PrevLogIndex: %d, NextIndex: %d, EntriesToSend: %v, Log: %v",
-        rf.me, rf.currentTerm, peer, newInvocationId, len(rf.log), rf.commitIndex, rf.nextIndex[peer]-1, rf.nextIndex[peer], rf.log[rf.nextIndex[peer]:], rf.log)
-
-    defer LOG(dLog1, "S%d, Term: %d, Ending AppendEntriesTo to S%d, InvocationId: %d, invocation time %v",
-        rf.me, rf.currentTerm, peer, newInvocationId, time.Since(start))
-
     expectedTerm := rf.currentTerm
 
     args := AppendEntriesArgs{
@@ -148,24 +143,37 @@ func (rf *Raft) AppendEntriesTo(peer int) {
         PrevLogTerm:  rf.log[rf.nextIndex[peer]-1].Term,
         Entries:      rf.log[rf.nextIndex[peer]:],
         LeaderCommit: rf.commitIndex,
-        InvocationId: newInvocationId,
+        RpcId:        rpcId.Add(1),
     }
+
+    detail := map[string]interface{}{
+        "LogLen":      len(rf.log),
+        "CommitIdx":   rf.commitIndex,
+        "PrevLogIdx":  args.PrevLogIndex,
+        "PrevLogTerm": args.PrevLogTerm,
+        "NextIdx":     rf.nextIndex[peer],
+        "ToSend":      rf.log[rf.nextIndex[peer]:],
+    }
+    logRpc(rf.me, peer, true, false, "APPEND_ENTRIES", rf.currentTerm, args.RpcId, detail)
 
     rf.mu.Unlock()
 
     reply := AppendEntriesReply{}
 
-    rf.sendAppendEntries(peer, &args, &reply)
-
-    rf.mu.Lock()
-    defer rf.mu.Unlock()
-
-    if !reply.Check {
-        LOG(dLog1, "S%d, Term: %d, Wrong invocation, Invocation Id: %d", rf.me, rf.currentTerm, newInvocationId)
+    // When messages get lost or the server is down, labrpc will stimulate a timeout and return a false reply.
+    // We just ignore the reply.
+    if ok := rf.sendAppendEntries(peer, &args, &reply); !ok {
         return
     }
 
-    LOG(dLog1, "S%d, Term: %d, Reply of Append Entries to S%d, Reply: %v", rf.me, rf.currentTerm, peer, reply)
+    detail = map[string]interface{}{
+        "Term":    reply.Term,
+        "Success": reply.Success,
+    }
+    logRpc(rf.me, peer, true, true, "APPEND_ENTRIES", rf.currentTerm, args.RpcId, detail)
+
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
 
     if didUpdateTerm := rf.mayUpdateTerm(reply.Term, peer); didUpdateTerm {
         // I don't need to handle the reply anymore. Since I learned a higher term, and became a follower.
@@ -208,7 +216,6 @@ func (rf *Raft) AppendEntriesTo(peer int) {
 
     // it is possible that newCommitIndex = rf.commitIndex
     if newCommitIndex > rf.commitIndex {
-        LOG(dLog1, "S%d, Term: %d, Update commit index %d -> %d", rf.me, rf.currentTerm, rf.commitIndex, newCommitIndex)
         rf.commitIndex = newCommitIndex
         go rf.Apply()
     }

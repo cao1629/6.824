@@ -3,71 +3,43 @@ package raft
 import (
     "fmt"
     "log"
+    "os"
+    "strings"
     "sync/atomic"
-    "time"
 )
-
-// Debugging
-//const Debug = false
-//
-//func DPrintf(format string, a ...interface{}) (n int, err error) {
-//    if Debug {
-//        log.Printf(format, a...)
-//    }
-//    return
-//}
 
 var (
-    appendEntriesInvocationId atomic.Uint32
+    logger = log.New(os.Stdout, "", log.Ltime|log.Lmicroseconds)
+    rpcId  atomic.Uint32
 )
 
-type logTopic string
+func logRpc(caller int, callee int, isCaller bool, reply bool, rpcName string, term int, rpcId uint32, detail map[string]interface{}) {
+    var b strings.Builder
+    var server int
+    if isCaller {
+        server = caller
+    } else {
+        server = callee
+    }
+    b.WriteString(fmt.Sprintf("[%d %02d] ", server, term))
+    if isCaller {
+        b.WriteString(fmt.Sprintf("[%s %04d *%d -> %d] ", rpcName, rpcId, caller, callee))
+    } else {
+        b.WriteString(fmt.Sprintf("[%s %04d %d -> *%d] ", rpcName, rpcId, caller, callee))
+    }
 
-const (
-    dClient  logTopic = "CLNT"
-    dCommit  logTopic = "CMIT"
-    dDrop    logTopic = "DROP"
-    dError   logTopic = "ERRO"
-    dInfo    logTopic = "INFO"
-    dLeader  logTopic = "LEAD"
-    dLog1    logTopic = "LOG1"
-    dLog2    logTopic = "LOG2"
-    dPersist logTopic = "PERS"
-    dSnap    logTopic = "SNAP"
+    if isCaller {
+        if !reply {
+            b.WriteString(fmt.Sprintf("RPC_ARGS: "))
+        } else {
+            b.WriteString(fmt.Sprintf("RPC_REPLY: "))
+        }
+    } else {
+        b.WriteString(fmt.Sprintf("LOCAL: "))
+    }
 
-    dApply logTopic = "APLY"
-
-    // Term changes
-    dTerm  logTopic = "TERM"
-    dTest  logTopic = "TEST"
-    dTimer logTopic = "TIMR"
-    dTrace logTopic = "TRCE"
-    dVote  logTopic = "VOTE"
-    dWarn  logTopic = "WARN"
-
-    dDebug logTopic = "DEBG"
-
-    // Server State changes
-    dState logTopic = "STAT"
-
-    dElection logTopic = "ELEC"
-
-    dTime logTopic = "TIME"
-
-    dHeartbeat logTopic = "HERT"
-)
-
-var debugStart time.Time
-
-func loggingInit() {
-    debugStart = time.Now()
-    log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
-}
-
-func LOG(topic logTopic, format string, a ...interface{}) {
-    time := time.Since(debugStart).Microseconds()
-    time /= 100
-    prefix := fmt.Sprintf("%06d %v ", time, string(topic))
-    format = prefix + format
-    log.Printf(format, a...)
+    for k, v := range detail {
+        b.WriteString(fmt.Sprintf("%s{%v} ", k, v))
+    }
+    logger.Println(b.String())
 }
