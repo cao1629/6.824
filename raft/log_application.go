@@ -24,9 +24,6 @@ type ApplyMsg struct {
     CommandIndex int
 
     // For 2D:
-    // When do we need a snapshot ApplyMsg?
-    // (1) InstallSnapshot
-    // (2) recover from crash
     SnapshotValid bool
     Snapshot      []byte
     SnapshotTerm  int

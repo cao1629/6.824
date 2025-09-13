@@ -192,7 +192,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     // 1. The other peer has a higher term than me. We already handled this case above.
     //
     // 2. Log doesn't match.
-    // (a) I'm a leader. My log is longer than the other peer's log.
+    // (a) I'm a leader. My log is longer than the other peer's log. prevLogIndex doesn't make sense.
     // (b) I'm a leader. The other peer's log is not shorter than mine, but its log at prevLogIndex has a different term than prevLogTerm.
     //
     // 3. Network failure

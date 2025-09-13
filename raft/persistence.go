@@ -10,14 +10,15 @@ package raft
 //
 
 import (
-    "6.824/labgob"
     "bytes"
     "sync"
+
+    "6.824/labgob"
 )
 
 // Simulate disk storage. Each Raft server has a Persister.
 // When a Raft server crashes, it loses its volatile states but things in its Persister.
-// When this Raft server is back, it recovers its persistent state from itws Persister.
+// When this Raft server is back, it recovers its persistent state from its Persister.
 type Persister struct {
     mu        sync.Mutex
     raftstate []byte
