@@ -235,6 +235,9 @@ func (rf *Raft) runFollowerOrCandidate() {
             timeout = generateRandomTimeout()
             electionTimer = time.After(timeout)
             rf.StartElection()
+
+        default:
+            continue
         }
     }
 }

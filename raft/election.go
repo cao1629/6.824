@@ -214,6 +214,7 @@ func (rf *Raft) StartElection() {
                 }
                 rf.mu.Unlock()
             }
+
         }
     }()
 }
