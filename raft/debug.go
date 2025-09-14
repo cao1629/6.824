@@ -60,3 +60,11 @@ func (rf *Raft) logRpc(caller int, callee int, rpcName string, term int, rpcId u
 }
 
 
+func (rf *Raft)logCommitIndexUpdate(oldCommitIndex int, newCommitIndex int) {
+    var b strings.Builder
+    b.WriteString(fmt.Sprintf("%8d ", logicalClock.Add(1)))
+    b.WriteString(fmt.Sprintf("[%d %02d] ", rf.me, rf.currentTerm))
+    b.WriteString(fmt.Sprintf("[COMMIT_INDEX %d -> %d] \n", oldCommitIndex, newCommitIndex))
+    rf.runtimeLogFile.WriteString(b.String())
+    rf.runtimeLogFile.Sync()
+}

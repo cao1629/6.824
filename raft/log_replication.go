@@ -111,8 +111,10 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// Try to update commitIndex
 	if args.LeaderCommit > rf.commitIndex {
 		if args.LeaderCommit > len(rf.log)-1 {
+            rf.logCommitIndexUpdate(rf.commitIndex, len(rf.log)-1)
 			rf.commitIndex = len(rf.log) - 1
 		} else {
+            rf.logCommitIndexUpdate(rf.commitIndex, args.LeaderCommit)
 			rf.commitIndex = args.LeaderCommit
 		}
 
@@ -164,6 +166,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
 		"LogLen":      len(rf.log),
         "Log":        rf.log,
 		"CommitIdx":   rf.commitIndex,
+        "MatchIndex": rf.matchIndex,
 		"PrevLogIdx":  args.PrevLogIndex,
 		"PrevLogTerm": args.PrevLogTerm,
 		"NextIdx":     rf.nextIndex[peer],
@@ -219,9 +222,10 @@ func (rf *Raft) AppendEntriesTo(peer int) {
 	}
 
 	// reply.Success is true, which means replication to the other peer is successful.
-	if rf.nextIndex[peer] == len(rf.log) {
-		return
-	}
+    // maybe other peer's log is already up-to-date. 
+	// if rf.nextIndex[peer] == len(rf.log) {
+	// 	return
+	// }
 
 	rf.nextIndex[peer] += len(args.Entries)
 	rf.matchIndex[peer] = args.PrevLogIndex + len(args.Entries)
@@ -231,6 +235,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
 
 	// it is possible that newCommitIndex = rf.commitIndex
 	if newCommitIndex > rf.commitIndex {
+        rf.logCommitIndexUpdate(rf.commitIndex, newCommitIndex)
 		rf.commitIndex = newCommitIndex
 		go rf.Apply()
 	}

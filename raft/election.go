@@ -196,7 +196,7 @@ func (rf *Raft) StartElection() {
 						// I have enough votes to become a leader.
 						// Stop the election ticker and start the heartbeat ticker.
 						// Break this "for select loop" to ignore the remaining votes.
-						rf.logStateChange(Candidate, Leader, rf.currentTerm, "elected as a leaer")
+						rf.logStateChange(Candidate, Leader, rf.currentTerm, "elected as a leader")
 						rf.state = Leader
 						for i := range rf.peers {
 							rf.nextIndex[i] = len(rf.log)
