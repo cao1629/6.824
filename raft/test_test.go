@@ -1361,7 +1361,8 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
         // perhaps send enough to get a snapshot
         nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
         for i := 0; i < nn; i++ {
-            cfg.rafts[sender].Start(rand.Int())
+            // cfg.rafts[sender].Start(rand.Int())
+            cfg.rafts[sender].Start(i)
         }
 
         // let applier threads catch up with the Start()'s
@@ -1369,7 +1370,8 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
             // make sure all followers have caught up, so that
             // an InstallSnapshot RPC isn't required for
             // TestSnapshotBasic2D().
-            cfg.one(rand.Int(), servers, true)
+            // cfg.one(rand.Int(), servers, true)
+            cfg.one(rand.Int(), servers, false)
         } else {
             cfg.one(rand.Int(), servers-1, true)
         }
