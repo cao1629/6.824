@@ -35,7 +35,6 @@ func clone(orig []byte) []byte {
     return x
 }
 
-// Like "move" in C++
 func (ps *Persister) Copy() *Persister {
     ps.mu.Lock()
     defer ps.mu.Unlock()
@@ -45,16 +44,14 @@ func (ps *Persister) Copy() *Persister {
     return np
 }
 
-// before calling this method: raft server -> encode -> []byte
-// []byte -> persister
+// persist() -> []byte -> SaveRaftState() copys the []byte into persister.raftstate
 func (ps *Persister) SaveRaftState(state []byte) {
     ps.mu.Lock()
     defer ps.mu.Unlock()
     ps.raftstate = clone(state)
 }
 
-// persister -> []byte
-// after calling this method: []byte -> decode -> raft server
+// persister.raftstate -> []byte -> ReadPesist() reads the []byte and decodes it into raft server
 func (ps *Persister) ReadRaftState() []byte {
     ps.mu.Lock()
     defer ps.mu.Unlock()

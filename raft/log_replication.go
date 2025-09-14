@@ -152,25 +152,37 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     }
     expectedTerm := rf.currentTerm
 
+    // when I'm finished replicating log entries to a follower,
+    // the nextIndex for that follower might be 1 + my log length.
+    // In this case, I won't send any entries in the next AppendEntriesTo call.
+    //
     args := AppendEntriesArgs{
         Term:         rf.currentTerm,
         LeaderId:     rf.me,
         PrevLogIndex: rf.nextIndex[peer] - 1,
         PrevLogTerm:  rf.log[rf.nextIndex[peer]-1].Term,
-        Entries:      rf.log[rf.nextIndex[peer]:],
+        //Entries:      rf.log[rf.nextIndex[peer]:],
         LeaderCommit: rf.commitIndex,
         RpcId:        rpcId.Add(1),
     }
 
+    if rf.nextIndex[peer] < len(rf.log) {
+        args.Entries = rf.log[rf.nextIndex[peer]:]
+    }
+
     detail := map[string]interface{}{
-        "LogLen":      len(rf.log),
-        "Log":         rf.log,
-        "CommitIdx":   rf.commitIndex,
-        "MatchIndex":  rf.matchIndex,
-        "PrevLogIdx":  args.PrevLogIndex,
-        "PrevLogTerm": args.PrevLogTerm,
-        "NextIdx":     rf.nextIndex[peer],
-        "ToSend":      rf.log[rf.nextIndex[peer]:],
+        "LogLen":        len(rf.log),
+        "Log":           rf.log,
+        "CommitIdx":     rf.commitIndex,
+        "MatchIndex":    rf.matchIndex,
+        "PrevLogIdx":    args.PrevLogIndex,
+        "PrevLogTerm":   args.PrevLogTerm,
+        "PeerNextIndex": rf.nextIndex[peer],
+        "NextIndex":     rf.nextIndex,
+    }
+
+    if rf.nextIndex[peer] < len(rf.log) {
+        detail["ToSend"] = rf.log[rf.nextIndex[peer]:]
     }
     rf.logRpc(rf.me, peer, "APPEND_ENTRIES ARGS", rf.currentTerm, args.RpcId, detail)
 
@@ -221,14 +233,9 @@ func (rf *Raft) AppendEntriesTo(peer int) {
         return
     }
 
-    // reply.Success is true, which means replication to the other peer is successful.
-    // maybe other peer's log is already up-to-date. 
-    // if rf.nextIndex[peer] == len(rf.log) {
-    // 	return
-    // }
-
-    rf.nextIndex[peer] += len(args.Entries)
     rf.matchIndex[peer] = args.PrevLogIndex + len(args.Entries)
+
+    rf.nextIndex[peer] = rf.matchIndex[peer] + 1
 
     // We just updated matchIndex for peer. Maybe we can update commitIndex.
     newCommitIndex := rf.findCommitIndex()

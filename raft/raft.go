@@ -179,7 +179,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
         {0, 0, false},
     }
 
-    rf.runtimeLogFile, _ = os.Create(fmt.Sprintf("raft-%d.log", rf.me))
+    rf.runtimeLogFile, _ = os.Create(fmt.Sprintf("raft-%d-%d.log", time.Now().Second(), rf.me))
+    rf.runtimeLogFile.Truncate(0)
 
     rf.applyCh = applyCh
 

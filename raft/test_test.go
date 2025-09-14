@@ -160,7 +160,7 @@ func TestBasicAgree2B(t *testing.T) {
         }
 
         // submit a command and then agree on it.
-        xindex := cfg.one(index*100, servers, false)
+        xindex := cfg.one(index*100, servers, true)
 
         if xindex != index {
             t.Fatalf("got index %v but expected %v", xindex, index)
@@ -185,7 +185,7 @@ func TestRPCBytes2B(t *testing.T) {
     cfg.begin("Test (2B): RPC byte count")
 
     // (1) Submit 99, wait for agreement
-    cfg.one(99, servers, false)
+    cfg.one(99, servers, true)
     //bytes0 := cfg.bytesTotal()
 
     iters := 10
@@ -197,7 +197,7 @@ func TestRPCBytes2B(t *testing.T) {
         // Submit a random string whose length is 5000 bytes, wait for agreement
         cmd := randstring(5000)
 
-        xindex := cfg.one(cmd, servers, false)
+        xindex := cfg.one(cmd, servers, true)
 
         if xindex != index {
             t.Fatalf("got index %v but expected %v", xindex, index)
@@ -213,6 +213,32 @@ func TestRPCBytes2B(t *testing.T) {
     //    LOG(dTest, "too many RPC bytes; got %v, expected %v", got, expected)
     //    t.Fatalf("too many RPC bytes; got %v, expected %v", got, expected)
     //}
+
+    cfg.end()
+}
+
+func TestMyRPCBytes2B(t *testing.T) {
+    servers := 3
+    cfg := make_config(t, servers, false, false)
+    defer cfg.cleanup()
+
+    cfg.begin("Test (2B): RPC byte count")
+
+    // (1) Submit 99, wait for agreement
+    cfg.one(99, servers, true)
+
+    iters := 10
+
+    // index = 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
+    for index := 2; index < iters+2; index++ {
+
+        xindex := cfg.one(index, servers, true)
+
+        if xindex != index {
+            t.Fatalf("got index %v but expected %v", xindex, index)
+
+        }
+    }
 
     cfg.end()
 }
@@ -318,7 +344,7 @@ func TestFailAgree2B(t *testing.T) {
 
     cfg.begin("Test (2B): agreement after follower reconnects")
 
-    cfg.one(101, servers, false)
+    cfg.one(101, servers, true)
 
     // disconnect one follower from the network.
     leader := cfg.checkOneLeader()
@@ -328,14 +354,14 @@ func TestFailAgree2B(t *testing.T) {
     // the leader and remaining follower should be
     // able to agree despite the disconnected follower.
 
-    cfg.one(102, servers-1, false)
+    cfg.one(102, servers-1, true)
 
-    cfg.one(103, servers-1, false)
+    cfg.one(103, servers-1, true)
     time.Sleep(RaftElectionTimeout)
 
-    cfg.one(104, servers-1, false)
+    cfg.one(104, servers-1, true)
 
-    cfg.one(105, servers-1, false)
+    cfg.one(105, servers-1, true)
 
     // re-connect
     cfg.connect((leader + 1) % servers)
@@ -359,7 +385,7 @@ func TestFailNoAgree2B(t *testing.T) {
 
     cfg.begin("Test (2B): no agreement if too many followers disconnect")
 
-    cfg.one(10, servers, false)
+    cfg.one(10, servers, true)
 
     // 3 of 5 followers disconnect
     leader := cfg.checkOneLeader()

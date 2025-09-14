@@ -161,6 +161,8 @@ func (cfg *config) crash1(i int) {
     }
 }
 
+// Given an ApplyMsg from server "i". Check it against the logs we have for each server.
+// Then apply the command to server "i".
 func (cfg *config) checkLogs(i int, m ApplyMsg) (string, bool) {
     err_msg := ""
     v := m.Command
@@ -182,6 +184,7 @@ func (cfg *config) checkLogs(i int, m ApplyMsg) (string, bool) {
 
 // applier reads message from apply ch and checks that they match the log
 // contents
+// Each server has its own applier running.
 func (cfg *config) applier(i int, applyCh chan ApplyMsg) {
     for m := range applyCh {
         if m.CommandValid == false {
@@ -514,7 +517,8 @@ func (cfg *config) checkNoLeader() {
     }
 }
 
-// how many servers think a log entry is committed?
+// return value 1: how many servers have committed this index?
+// return value 2: the command committed, if any
 func (cfg *config) nCommitted(index int) (int, interface{}) {
     count := 0
     var cmd interface{} = nil
@@ -563,6 +567,7 @@ func (cfg *config) wait(index int, n int, startTerm int) interface{} {
             }
         }
     }
+
     nd, cmd := cfg.nCommitted(index)
     if nd < n {
         cfg.t.Fatalf("only %d decided for index %d; wanted %d",

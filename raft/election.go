@@ -54,7 +54,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
         return
     }
 
-    // [raft-paper 5.4.1 3 the candidate's log is at least as up-to-date as the receiver's log]
+    // [raft-paper 5.4.1 the candidate's log is at least as up-to-date as the receiver's log]
     // Check if the candidate's log is at least as up-to-date as mine.
     upToDateCandidate := rf.isCandidateLogUpToDate(args.LastLogIndex, args.LastLogTerm)
 
@@ -69,6 +69,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
         if upToDateCandidate {
             rf.votedFor = args.CandidateId
             reply.VoteGranted = true
+            // follower learned a higher term, cast the vote
+
         }
 
         // currentTerm has been updated
