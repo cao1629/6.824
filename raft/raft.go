@@ -22,6 +22,7 @@ import (
     "os"
     "sync"
     "sync/atomic"
+    "time"
 
     //	"6.824/labgob"
     "fmt"
@@ -71,10 +72,7 @@ type Raft struct {
     commitIndex int
     lastApplied int
 
-    // two tickers
-    heartbeatTicker *HeartbeatTicker
-
-    electionTicker *ElectionTicker
+    lastTimeReceivedHeartbeat time.Time
 
     applyCh chan ApplyMsg
     killCh  chan struct{}
@@ -183,24 +181,20 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
     rf.runtimeLogFile, _ = os.Create(fmt.Sprintf("raft-%d.log", rf.me))
 
-    rf.heartbeatTicker = NewHeartbeatTicker(rf)
-    rf.electionTicker = NewElectionTicker(rf)
     rf.applyCh = applyCh
+
+    rf.lastTimeReceivedHeartbeat = time.Now()
 
     // Your initialization code here (2A, 2B, 2C).
     go func() {
-        rf.electionTicker.Reset(generateRandomTimeout())
         for {
-            select {
-            case <-rf.heartbeatTicker.C:
-                go rf.AppendEntriesToOthers()
-
-            case <-rf.electionTicker.C:
-                go rf.StartElection()
-
-            case <-rf.killCh:
-                // When killed, this server will stop after its current work is done.
-                return
+            switch rf.getStateLocked() {
+            case Follower, Candidate:
+                rf.runFollowerOrCandidate()
+            case Leader:
+                rf.runLeader()
+            default:
+                panic("invalid state")
             }
         }
     }()
@@ -211,28 +205,70 @@ func Make(peers []*labrpc.ClientEnd, me int,
     return rf
 }
 
+// switch to read-write lock later on
+func (rf *Raft) setStateLocked(state State) {
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
+    rf.state = state
+}
+
+func (rf *Raft) getStateLocked() State {
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
+    return rf.state
+}
+
+func (rf *Raft) runFollowerOrCandidate() {
+    timeout := generateRandomTimeout()
+    electionTimer := time.After(timeout)
+
+    for rf.getStateLocked() != Leader {
+        select {
+        case <-electionTimer:
+            if time.Since(rf.lastTimeReceivedHeartbeat) < timeout {
+                timeout = generateRandomTimeout()
+                electionTimer = time.After(timeout)
+                continue
+            }
+
+            // Start Election
+            timeout = generateRandomTimeout()
+            electionTimer = time.After(timeout)
+            rf.StartElection()
+        }
+    }
+}
+
+func (rf *Raft) runLeader() {
+    heartbeat := time.NewTicker(heartbeatInterval)
+
+    for rf.getStateLocked() == Leader {
+        select {
+        case <-heartbeat.C:
+            // goroutine might be interrupted here
+            // when AppendEntriesToOthers() is called, I might not be a leader anymore.
+            rf.AppendEntriesToOthers()
+        }
+    }
+}
+
 // non-thread-safe
 // I could be a leader, a candidate, or a follower.
 // If I learn a higher term, I update my term. If I'm not a follower, I become a follower.
 // If I'm currently a leader, I stop my heartbeat ticker.
 // If I'm currently a candidate, I reset the election ticker.
 func (rf *Raft) mayUpdateTerm(term int, from int) bool {
+
+    // xxx -> follower
     if term > rf.currentTerm {
 
         rf.currentTerm = term
-
-        if rf.state == Leader {
-            rf.heartbeatTicker.Pause()
-        }
-
-        rf.electionTicker.Reset(generateRandomTimeout())
 
         if rf.state != Follower {
             rf.logStateChange(rf.state, Follower, rf.currentTerm, "learn a higher term")
         }
 
         rf.state = Follower
-
         rf.votedFor = -1
 
         rf.persist()
