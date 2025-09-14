@@ -18,75 +18,75 @@ package raft
 //
 
 import (
-	//	"bytes"
-	"os"
-	"sync"
-	"sync/atomic"
+    //	"bytes"
+    "os"
+    "sync"
+    "sync/atomic"
 
-	//	"6.824/labgob"
-	"fmt"
+    //	"6.824/labgob"
+    "fmt"
 
-	"6.824/labrpc"
+    "6.824/labrpc"
 )
 
 // A Go object implementing a single Raft peer.
 type Raft struct {
-	// Lock to protect shared access to this peer's state
-	mu sync.Mutex
+    // Lock to protect shared access to this peer's state
+    mu sync.Mutex
 
-	// RPC end points of all peers
-	peers []*labrpc.ClientEnd
+    // RPC end points of all peers
+    peers []*labrpc.ClientEnd
 
-	// Object to hold this peer's persisted state
-	persister *Persister
+    // Object to hold this peer's persisted state
+    persister *Persister
 
-	// this peer's index into peers[]
-	me int
+    // this peer's index into peers[]
+    me int
 
-	// set by Kill()
-	dead int32
+    // set by Kill()
+    dead int32
 
-	// Your data here (2A, 2B, 2C).
-	// Look at the paper's Figure 2 for a description of what
-	// state a Raft server must maintain.
+    // Your data here (2A, 2B, 2C).
+    // Look at the paper's Figure 2 for a description of what
+    // state a Raft server must maintain.
 
-	currentTerm int
+    currentTerm int
 
-	// in the current term, I voted for whom.
-	// -1 means no vote
-	votedFor int
+    // in the current term, I voted for whom.
+    // -1 means no vote
+    votedFor int
 
-	state State
+    state State
 
-	// log
-	log        []LogEntry
-	nextIndex  []int
-	matchIndex []int
+    // log
+    log        []LogEntry
+    nextIndex  []int
+    matchIndex []int
 
-	// snapshot
-	lastIncludedIndex int
-	lastIncludedTerm  int
-	snapshot          []byte
+    // snapshot
+    lastIncludedIndex int
+    lastIncludedTerm  int
+    snapshot          []byte
 
-	commitIndex int
-	lastApplied int
+    commitIndex int
+    lastApplied int
 
-	// two tickers
-	heartbeatTicker *HeartbeatTicker
+    // two tickers
+    heartbeatTicker *HeartbeatTicker
 
-	electionTicker *ElectionTicker
+    electionTicker *ElectionTicker
 
-	applyCh chan ApplyMsg
-	killCh  chan struct{}
+    applyCh chan ApplyMsg
+    killCh  chan struct{}
 
-	// debugging
-	runtimeLogFile *os.File
+    // debugging
+    runtimeLogFile *os.File
 }
 
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
-	return rf.currentTerm, rf.state == Leader
+    return rf.currentTerm, rf.state == Leader
 }
 
 // the service using Raft (e.g. a k/v server) wants to start
@@ -104,25 +104,25 @@ func (rf *Raft) GetState() (int, bool) {
 //
 // #1 I need to check if this one
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	// Your code here (2B).
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+    // Your code here (2B).
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
 
-	if rf.state != Leader {
-		return 0, 0, false
-	}
+    if rf.state != Leader {
+        return 0, 0, false
+    }
 
-	rf.log = append(rf.log, LogEntry{
-		Term:         rf.currentTerm,
-		Command:      command,
-		CommandValid: true,
-	})
+    rf.log = append(rf.log, LogEntry{
+        Term:         rf.currentTerm,
+        Command:      command,
+        CommandValid: true,
+    })
 
-	rf.matchIndex[rf.me] = len(rf.log) - 1
+    rf.matchIndex[rf.me] = len(rf.log) - 1
 
-	rf.persist()
+    rf.persist()
 
-	return len(rf.log) - 1, rf.currentTerm, true
+    return len(rf.log) - 1, rf.currentTerm, true
 }
 
 // the tester doesn't halt goroutines created by Raft after each test,
@@ -139,14 +139,14 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 //
 // Permantently shut down the server
 func (rf *Raft) Kill() {
-	atomic.StoreInt32(&rf.dead, 1)
-	// Stop the election ticker when killed
-	//rf.killCh <- struct{}{}
+    atomic.StoreInt32(&rf.dead, 1)
+    // Stop the election ticker when killed
+    //rf.killCh <- struct{}{}
 }
 
 func (rf *Raft) killed() bool {
-	z := atomic.LoadInt32(&rf.dead)
-	return z == 1
+    z := atomic.LoadInt32(&rf.dead)
+    return z == 1
 }
 
 // the service or tester wants to create a Raft server. the ports
@@ -159,56 +159,56 @@ func (rf *Raft) killed() bool {
 // Make() must return quickly, so it should start goroutines
 // for any long-running work.
 func Make(peers []*labrpc.ClientEnd, me int,
-	persister *Persister, applyCh chan ApplyMsg) *Raft {
+    persister *Persister, applyCh chan ApplyMsg) *Raft {
 
-	rf := &Raft{}
-	rf.peers = peers
-	rf.persister = persister
-	rf.me = me
-	rf.currentTerm = 1
+    rf := &Raft{}
+    rf.peers = peers
+    rf.persister = persister
+    rf.me = me
+    rf.currentTerm = 1
 
-	rf.state = Follower
+    rf.state = Follower
 
-	rf.nextIndex = make([]int, len(peers))
-	rf.matchIndex = make([]int, len(peers))
+    rf.nextIndex = make([]int, len(peers))
+    rf.matchIndex = make([]int, len(peers))
 
-	rf.lastApplied = 0
+    rf.lastApplied = 0
 
-	rf.lastIncludedIndex = 0
-	rf.lastIncludedTerm = 0
+    rf.lastIncludedIndex = 0
+    rf.lastIncludedTerm = 0
 
-	rf.log = []LogEntry{
-		{0, 0, false},
-	}
+    rf.log = []LogEntry{
+        {0, 0, false},
+    }
 
-	rf.runtimeLogFile, _ = os.Create(fmt.Sprintf("raft-%d.log", rf.me))
+    rf.runtimeLogFile, _ = os.Create(fmt.Sprintf("raft-%d.log", rf.me))
 
-	rf.heartbeatTicker = NewHeartbeatTicker(rf)
-	rf.electionTicker = NewElectionTicker(rf)
-	rf.applyCh = applyCh
+    rf.heartbeatTicker = NewHeartbeatTicker(rf)
+    rf.electionTicker = NewElectionTicker(rf)
+    rf.applyCh = applyCh
 
-	// Your initialization code here (2A, 2B, 2C).
-	go func() {
-		rf.electionTicker.Reset(generateRandomTimeout())
-		for {
-			select {
-			case <-rf.heartbeatTicker.C:
-				go rf.AppendEntriesToOthers()
+    // Your initialization code here (2A, 2B, 2C).
+    go func() {
+        rf.electionTicker.Reset(generateRandomTimeout())
+        for {
+            select {
+            case <-rf.heartbeatTicker.C:
+                go rf.AppendEntriesToOthers()
 
-			case <-rf.electionTicker.C:
-				go rf.StartElection()
+            case <-rf.electionTicker.C:
+                go rf.StartElection()
 
-			case <-rf.killCh:
-				// When killed, this server will stop after its current work is done.
-				return
-			}
-		}
-	}()
+            case <-rf.killCh:
+                // When killed, this server will stop after its current work is done.
+                return
+            }
+        }
+    }()
 
-	// initialize from state persisted before a crash
-	rf.readPersist(rf.persister.ReadRaftState())
+    // initialize from state persisted before a crash
+    rf.readPersist(rf.persister.ReadRaftState())
 
-	return rf
+    return rf
 }
 
 // non-thread-safe
@@ -217,63 +217,63 @@ func Make(peers []*labrpc.ClientEnd, me int,
 // If I'm currently a leader, I stop my heartbeat ticker.
 // If I'm currently a candidate, I reset the election ticker.
 func (rf *Raft) mayUpdateTerm(term int, from int) bool {
-	if term > rf.currentTerm {
+    if term > rf.currentTerm {
 
-		rf.currentTerm = term
+        rf.currentTerm = term
 
-		if rf.state == Leader {
-			rf.heartbeatTicker.Pause()
-		}
+        if rf.state == Leader {
+            rf.heartbeatTicker.Pause()
+        }
 
-		rf.electionTicker.Reset(generateRandomTimeout())
+        rf.electionTicker.Reset(generateRandomTimeout())
 
-		if (rf.state != Follower) {
-			rf.logStateChange(rf.state, Follower, rf.currentTerm, "learn a higher term")	
-		}
-		
-		rf.state = Follower
+        if rf.state != Follower {
+            rf.logStateChange(rf.state, Follower, rf.currentTerm, "learn a higher term")
+        }
 
-		rf.votedFor = -1
+        rf.state = Follower
 
-		rf.persist()
-		return true
-	}
+        rf.votedFor = -1
 
-	return false
+        rf.persist()
+        return true
+    }
+
+    return false
 }
 
 type EntryInfo struct {
-	index int
-	term  int
+    index int
+    term  int
 }
 
 // non-thread-safe
 func (rf *Raft) getEntriesToSend(peer int) []EntryInfo {
-	entriesInfo := make([]EntryInfo, len(rf.log)-rf.nextIndex[peer])
-	for i := rf.nextIndex[peer]; i < len(rf.log); i++ {
-		entriesInfo[i-rf.nextIndex[peer]] = EntryInfo{
-			index: i,
-			term:  rf.log[i].Term,
-		}
-	}
-	return entriesInfo
+    entriesInfo := make([]EntryInfo, len(rf.log)-rf.nextIndex[peer])
+    for i := rf.nextIndex[peer]; i < len(rf.log); i++ {
+        entriesInfo[i-rf.nextIndex[peer]] = EntryInfo{
+            index: i,
+            term:  rf.log[i].Term,
+        }
+    }
+    return entriesInfo
 }
 
 func (rf *Raft) getLogInfo() []EntryInfo {
-	entriesInfo := make([]EntryInfo, len(rf.log))
-	for i, entry := range rf.log {
-		entriesInfo[i] = EntryInfo{
-			index: i,
-			term:  entry.Term,
-		}
-	}
-	return entriesInfo
+    entriesInfo := make([]EntryInfo, len(rf.log))
+    for i, entry := range rf.log {
+        entriesInfo[i] = EntryInfo{
+            index: i,
+            term:  entry.Term,
+        }
+    }
+    return entriesInfo
 }
 
 type State string
 
 const (
-	Leader    State = "leader"
-	Follower  State = "follower"
-	Candidate State = "candidate"
+    Leader    State = "leader"
+    Follower  State = "follower"
+    Candidate State = "candidate"
 )
