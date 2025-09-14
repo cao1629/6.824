@@ -24,7 +24,7 @@ import "time"
 import "fmt"
 
 const (
-    electionTimeoutMin time.Duration = 259 * time.Millisecond // 250*time.Ms
+    electionTimeoutMin time.Duration = 250 * time.Millisecond // 250*time.Ms
     electionTimeoutMax time.Duration = 400 * time.Millisecond // 400 *time.Ms
     heartbeatInterval  time.Duration = 60 * time.Millisecond  // 60 * time.Ms
 )
