@@ -70,7 +70,19 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
             rf.votedFor = args.CandidateId
             reply.VoteGranted = true
             // follower learned a higher term, cast the vote
-
+            detail = map[string]interface{}{
+                "Term":    rf.currentTerm,
+                "Success": true,
+            }
+            rf.logRpc(args.CandidateId, rf.me, "REQUEST_VOTE REPLY", rf.currentTerm, args.RpcId, detail)
+        } else {
+            // follower learned a higher term, but reject the vote due to out-of-date log
+            detail = map[string]interface{}{
+                "Term":    rf.currentTerm,
+                "Success": false,
+                "Reason":  "Out-of-data log",
+            }
+            rf.logRpc(args.CandidateId, rf.me, "REQUEST_VOTE REPLY", rf.currentTerm, args.RpcId, detail)
         }
 
         // currentTerm has been updated
@@ -79,8 +91,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
         return
     }
 
+    // follower with the up-to-date term, but reject the vote due to out-of-date log
     if !upToDateCandidate {
-        detail := map[string]interface{}{
+        detail = map[string]interface{}{
             "Term":    rf.currentTerm,
             "Success": false,
             "Reason":  "Out-of-data log",
@@ -93,6 +106,12 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
     if rf.votedFor == -1 {
         rf.votedFor = args.CandidateId
         reply.VoteGranted = true
+
+        detail = map[string]interface{}{
+            "Term":    rf.currentTerm,
+            "Success": true,
+        }
+        rf.logRpc(args.CandidateId, rf.me, "REQUEST_VOTE REPLY", rf.currentTerm, args.RpcId, detail)
     } else {
         // I have already voted for someone in this term.
         detail := map[string]interface{}{

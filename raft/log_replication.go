@@ -37,6 +37,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     rf.mu.Lock()
     rf.lastTimeReceivedHeartbeat = time.Now()
     rf.mu.Unlock()
+
+    defer rf.persist()
+
     reply.Term = rf.currentTerm
     reply.Success = false
 
@@ -68,7 +71,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
         // I should become a follower, reset my votedFor, and reset my election timer.
         rf.state = Follower
         rf.votedFor = -1
-
     }
 
     //  Here I must be a follower with the most up-to-date term.
@@ -102,7 +104,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // Append entries to my log.
     if len(args.Entries) != 0 {
         rf.log = append(rf.log[:args.PrevLogIndex+1], args.Entries...)
-
     }
 
     // Try to update commitIndex
@@ -196,24 +197,36 @@ func (rf *Raft) AppendEntriesTo(peer int) {
         return
     }
 
-    detail = map[string]interface{}{
-        "Term":    reply.Term,
-        "Success": reply.Success,
-    }
-    rf.logRpc(rf.me, peer, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
-
     rf.mu.Lock()
     defer rf.mu.Unlock()
 
     if didUpdateTerm := rf.mayUpdateTerm(reply.Term, peer); didUpdateTerm {
         // I don't need to handle the reply anymore. Since I learned a higher term, and became a follower.
         // The RequestVote RPC I sent when I was a leader was meaningless.
+
+        detail = map[string]interface{}{
+            "Term":       reply.Term,
+            "Success":    reply.Success,
+            "MatchIndex": rf.matchIndex,
+            "NextIndex":  rf.nextIndex,
+        }
+
+        rf.logRpc(rf.me, peer, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
+        rf.persist()
         return
     }
 
     // I expect myself to be a leader here. However, it is possible that I am not a leader anymore.
     // how come? received a higher term from another peer.
     if rf.isContextLost(Leader, expectedTerm) {
+        detail = map[string]interface{}{
+            "Term":       reply.Term,
+            "Success":    reply.Success,
+            "MatchIndex": rf.matchIndex,
+            "NextIndex":  rf.nextIndex,
+        }
+
+        rf.logRpc(rf.me, peer, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
         return
     }
 
@@ -230,6 +243,14 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     if !reply.Success {
         // Only decrement
         rf.nextIndex[peer]--
+        detail = map[string]interface{}{
+            "Term":       reply.Term,
+            "Success":    reply.Success,
+            "MatchIndex": rf.matchIndex,
+            "NextIndex":  rf.nextIndex,
+        }
+
+        rf.logRpc(rf.me, peer, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
         return
     }
 
@@ -246,6 +267,15 @@ func (rf *Raft) AppendEntriesTo(peer int) {
         rf.commitIndex = newCommitIndex
         go rf.Apply()
     }
+
+    detail = map[string]interface{}{
+        "Term":       reply.Term,
+        "Success":    reply.Success,
+        "MatchIndex": rf.matchIndex,
+        "NextIndex":  rf.nextIndex,
+    }
+
+    rf.logRpc(rf.me, peer, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
 }
 
 // Now I'm a leader. I'm sending AppendEntries RPC to all other peers concurently.

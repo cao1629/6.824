@@ -18,14 +18,12 @@ package raft
 //
 
 import (
+    "fmt"
     //	"bytes"
     "os"
     "sync"
     "sync/atomic"
     "time"
-
-    //	"6.824/labgob"
-    "fmt"
 
     "6.824/labrpc"
 )
@@ -180,6 +178,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
     }
 
     rf.runtimeLogFile, _ = os.Create(fmt.Sprintf("raft-%d-%d.log", time.Now().Second(), rf.me))
+    //rf.runtimeLogFile, _ = os.Create(fmt.Sprintf("raft-%d.log", rf.me))
+
     rf.runtimeLogFile.Truncate(0)
 
     rf.applyCh = applyCh

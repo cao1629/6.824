@@ -2,13 +2,13 @@ package raft
 
 import (
     "fmt"
+    "sort"
     "strings"
     "sync/atomic"
-    "sort"
 )
 
 var (
-    rpcId  atomic.Uint32
+    rpcId        atomic.Uint32
     logicalClock atomic.Uint32
 )
 
@@ -24,12 +24,12 @@ func (rf *Raft) logStateChange(oldState State, newState State, term int, detail 
 }
 
 func (rf *Raft) logRpc(caller int, callee int, rpcName string, term int, rpcId uint32, detail map[string]interface{}) {
-    
+
     var b strings.Builder
 
     var isCaller bool
 
-    if (rf.me == caller) {
+    if rf.me == caller {
         isCaller = true
     } else {
         isCaller = false
@@ -53,18 +53,26 @@ func (rf *Raft) logRpc(caller int, callee int, rpcName string, term int, rpcId u
         b.WriteString(fmt.Sprintf("%s{%v} ", k, detail[k]))
     }
 
-
     b.WriteString("\n")
     rf.runtimeLogFile.WriteString(b.String())
     rf.runtimeLogFile.Sync()
 }
 
-
-func (rf *Raft)logCommitIndexUpdate(oldCommitIndex int, newCommitIndex int) {
+func (rf *Raft) logCommitIndexUpdate(oldCommitIndex int, newCommitIndex int) {
     var b strings.Builder
     b.WriteString(fmt.Sprintf("%8d ", logicalClock.Add(1)))
     b.WriteString(fmt.Sprintf("[%d %02d] ", rf.me, rf.currentTerm))
     b.WriteString(fmt.Sprintf("[COMMIT_INDEX %d -> %d] \n", oldCommitIndex, newCommitIndex))
+    rf.runtimeLogFile.WriteString(b.String())
+    rf.runtimeLogFile.Sync()
+}
+
+func (rf *Raft) logApply(oldLastApplied int, newLastApplied int) {
+    var b strings.Builder
+    b.WriteString(fmt.Sprintf("%8d ", logicalClock.Add(1)))
+    b.WriteString(fmt.Sprintf("[%d %02d] ", rf.me, rf.currentTerm))
+    b.WriteString(fmt.Sprintf("[APPLY %d -> %d] ", oldLastApplied, newLastApplied))
+    b.WriteString(fmt.Sprintf("Applied: %v\n", rf.log[oldLastApplied+1:newLastApplied+1]))
     rf.runtimeLogFile.WriteString(b.String())
     rf.runtimeLogFile.Sync()
 }

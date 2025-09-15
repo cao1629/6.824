@@ -45,4 +45,5 @@ func (rf *Raft) Apply() {
     }
 
     rf.lastApplied = rf.commitIndex
+
 }

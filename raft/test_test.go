@@ -978,6 +978,7 @@ func TestPersist22C(t *testing.T) {
 
     index := 1
     for iters := 0; iters < 5; iters++ {
+        // 11  14  17  20  23
         cfg.one(10+index, servers, true)
         index++
 
@@ -986,6 +987,7 @@ func TestPersist22C(t *testing.T) {
         cfg.disconnect((leader1 + 1) % servers)
         cfg.disconnect((leader1 + 2) % servers)
 
+        // 12  15  18  21  24
         cfg.one(10+index, servers-2, true)
         index++
 
@@ -1003,6 +1005,7 @@ func TestPersist22C(t *testing.T) {
         cfg.start1((leader1+3)%servers, cfg.applier)
         cfg.connect((leader1 + 3) % servers)
 
+        // 13  16  19  22  25
         cfg.one(10+index, servers-2, true)
         index++
 
