@@ -35,8 +35,9 @@ type AppendEntriesReply struct {
 // Now I receive an AppendEntries RPC from a self-claimed leader.
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
     rf.mu.Lock()
+    defer rf.mu.Unlock()
+
     rf.lastTimeReceivedHeartbeat = time.Now()
-    rf.mu.Unlock()
 
     defer rf.persist()
 
@@ -48,6 +49,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
         "PrevLogTerm":  args.PrevLogTerm,
         "Entries":      args.Entries,
         "LeaderCommit": args.LeaderCommit,
+        "Log":          rf.log,
     }
 
     rf.logRpc(args.LeaderId, rf.me, "APPEND_ENTRIES ARGS", rf.currentTerm, args.RpcId, detail)
@@ -55,6 +57,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // I received a message from someone with a smaller term.
     // Ignore this message, send back my current term and false.
     if args.Term < rf.currentTerm {
+
         detail = map[string]interface{}{
             "Term":    rf.currentTerm,
             "Success": false,
@@ -90,7 +93,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
     // (b) term does not match
     if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
-        detail := map[string]interface{}{
+        detail = map[string]interface{}{
             "Term":    rf.currentTerm,
             "Success": false,
             "Reason":  "Wrong term",
@@ -108,6 +111,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
     // Try to update commitIndex
     if args.LeaderCommit > rf.commitIndex {
+
         if args.LeaderCommit > len(rf.log)-1 {
             rf.logCommitIndexUpdate(rf.commitIndex, len(rf.log)-1)
             rf.commitIndex = len(rf.log) - 1
@@ -242,7 +246,9 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     // no need to decrement nextIndex
     if !reply.Success {
         // Only decrement
-        rf.nextIndex[peer]--
+        if rf.nextIndex[peer] > 1 {
+            rf.nextIndex[peer]--
+        }
         detail = map[string]interface{}{
             "Term":       reply.Term,
             "Success":    reply.Success,

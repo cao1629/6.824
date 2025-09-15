@@ -969,6 +969,58 @@ func TestPersist12C(t *testing.T) {
     cfg.end()
 }
 
+func TestMyPersist22C(t *testing.T) {
+    servers := 5
+    cfg := make_config(t, servers, false, false)
+    defer cfg.cleanup()
+
+    cfg.begin("Test (2C): more persistence")
+
+    index := 1
+
+    // 11
+    cfg.one(10+index, servers, true)
+    index++
+
+    leader1 := cfg.checkOneLeader()
+
+    cfg.disconnect((leader1 + 1) % servers)
+    cfg.disconnect((leader1 + 2) % servers)
+
+    // 12
+    cfg.one(10+index, servers-2, true)
+    index++
+
+    cfg.disconnect((leader1 + 0) % servers)
+    cfg.disconnect((leader1 + 3) % servers)
+    cfg.disconnect((leader1 + 4) % servers)
+
+    // restart 3, 4
+    cfg.start1((leader1+1)%servers, cfg.applier)
+    cfg.start1((leader1+2)%servers, cfg.applier)
+    cfg.connect((leader1 + 1) % servers)
+    cfg.connect((leader1 + 2) % servers)
+
+    time.Sleep(RaftElectionTimeout)
+
+    cfg.start1((leader1+3)%servers, cfg.applier)
+    cfg.connect((leader1 + 3) % servers)
+
+    // 13
+    cfg.one(10+index, servers-2, true)
+    index++
+
+    cfg.connect((leader1 + 4) % servers)
+    cfg.connect((leader1 + 0) % servers)
+
+    // make sure we have an elected leader
+    time.Sleep(3 * RaftElectionTimeout)
+
+    cfg.one(1000, servers, true)
+
+    cfg.end()
+}
+
 func TestPersist22C(t *testing.T) {
     servers := 5
     cfg := make_config(t, servers, false, false)
