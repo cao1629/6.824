@@ -59,12 +59,16 @@ type config struct {
     t         *testing.T
     finished  int32
     net       *labrpc.Network
-    n         int
+    n         int // how many servers
     rafts     []*Raft
     applyErr  []string // from apply channel readers
     connected []bool   // whether each server is on the net
     saved     []*Persister
-    endnames  [][]string // the port file names each sends to
+
+    // the port file names each sends to
+    // if we have 3 nodes:
+    // endnames[0] means all the ClientEnds of connections 0->1, 0->2, 0->3
+    endnames [][]string
 
     // copy of each server's committed entries
     // map[int]interface{}: index -> command
@@ -99,9 +103,9 @@ func make_config(t *testing.T, n int, unreliable bool, snapshot bool) *config {
     cfg.n = n
     cfg.applyErr = make([]string, cfg.n)
     cfg.rafts = make([]*Raft, cfg.n)
-    cfg.connected = make([]bool, cfg.n)
-    cfg.saved = make([]*Persister, cfg.n)
-    cfg.endnames = make([][]string, cfg.n)
+    cfg.connected = make([]bool, cfg.n)    // if a raft instance is connected to the net
+    cfg.saved = make([]*Persister, cfg.n)  // Persisters for each raft instance
+    cfg.endnames = make([][]string, cfg.n) // each rpc client can send to n rpc servers.
     cfg.logs = make([]map[int]interface{}, cfg.n)
     cfg.lastApplied = make([]int, cfg.n)
     cfg.start = time.Now()
@@ -383,13 +387,14 @@ func (cfg *config) cleanup() {
     cfg.checkTimeout()
 }
 
-// attach server i to the net.
+// attach node i to the net.
 func (cfg *config) connect(i int) {
     // fmt.Printf("connect(%d)\n", i)
 
     cfg.connected[i] = true
 
     // outgoing ClientEnds
+    // all connections from ClientEnd i to other Servers.
     for j := 0; j < cfg.n; j++ {
         if cfg.connected[j] {
             endname := cfg.endnames[i][j]
@@ -398,6 +403,7 @@ func (cfg *config) connect(i int) {
     }
 
     // incoming ClientEnds
+    // all connections from other ClientEnds to Server i.
     for j := 0; j < cfg.n; j++ {
         if cfg.connected[j] {
             endname := cfg.endnames[j][i]
@@ -407,6 +413,7 @@ func (cfg *config) connect(i int) {
 }
 
 // detach server i from the net.
+//
 func (cfg *config) disconnect(i int) {
     cfg.connected[i] = false
 
