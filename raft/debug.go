@@ -18,9 +18,7 @@ func (rf *Raft) logStateChange(oldState State, newState State, term int, detail 
     b.WriteString(fmt.Sprintf("[%d %02d] ", rf.me, term))
     b.WriteString(fmt.Sprintf("[STATE %s -> *%s] ", oldState, newState))
     b.WriteString(detail)
-    b.WriteString("\n")
-    rf.runtimeLogFile.WriteString(b.String())
-    rf.runtimeLogFile.Sync()
+    rf.logger.Println(b.String())
 }
 
 func (rf *Raft) logRpc(caller int, callee int, rpcName string, term int, rpcId uint32, detail map[string]interface{}) {
@@ -53,18 +51,15 @@ func (rf *Raft) logRpc(caller int, callee int, rpcName string, term int, rpcId u
         b.WriteString(fmt.Sprintf("%s{%v} ", k, detail[k]))
     }
 
-    b.WriteString("\n")
-    rf.runtimeLogFile.WriteString(b.String())
-    rf.runtimeLogFile.Sync()
+    rf.logger.Println(b.String())
 }
 
 func (rf *Raft) logCommitIndexUpdate(oldCommitIndex int, newCommitIndex int) {
     var b strings.Builder
     b.WriteString(fmt.Sprintf("%8d ", logicalClock.Add(1)))
     b.WriteString(fmt.Sprintf("[%d %02d] ", rf.me, rf.currentTerm))
-    b.WriteString(fmt.Sprintf("[COMMIT_INDEX %d -> %d] \n", oldCommitIndex, newCommitIndex))
-    rf.runtimeLogFile.WriteString(b.String())
-    rf.runtimeLogFile.Sync()
+    b.WriteString(fmt.Sprintf("[COMMIT_INDEX %d -> %d]", oldCommitIndex, newCommitIndex))
+    rf.logger.Println(b.String())
 }
 
 func (rf *Raft) logApply(oldLastApplied int, newLastApplied int) {
@@ -72,7 +67,30 @@ func (rf *Raft) logApply(oldLastApplied int, newLastApplied int) {
     b.WriteString(fmt.Sprintf("%8d ", logicalClock.Add(1)))
     b.WriteString(fmt.Sprintf("[%d %02d] ", rf.me, rf.currentTerm))
     b.WriteString(fmt.Sprintf("[APPLY %d -> %d] ", oldLastApplied, newLastApplied))
-    b.WriteString(fmt.Sprintf("Applied: %v\n", rf.log[oldLastApplied+1:newLastApplied+1]))
-    rf.runtimeLogFile.WriteString(b.String())
-    rf.runtimeLogFile.Sync()
+    b.WriteString(fmt.Sprintf("Applied: %v", rf.log[oldLastApplied+1:newLastApplied+1]))
+    rf.logger.Println(b.String())
+}
+
+func (rf *Raft) logEnterStart() {
+    var b strings.Builder
+    b.WriteString(fmt.Sprintf("%8d ", logicalClock.Add(1)))
+    b.WriteString(fmt.Sprintf("[%d %02d] ", rf.me, rf.currentTerm))
+    b.WriteString("[ENTER START]")
+    rf.logger.Println(b.String())
+}
+
+func (rf *Raft) logFinishStart() {
+    var b strings.Builder
+    b.WriteString(fmt.Sprintf("%8d ", logicalClock.Add(1)))
+    b.WriteString(fmt.Sprintf("[%d %02d] ", rf.me, rf.currentTerm))
+    b.WriteString("[FINISH START]")
+    rf.logger.Println(b.String())
+}
+
+func (rf *Raft) logLockUnlock(isLock bool) {
+    if isLock {
+        rf.logger.Println("lock")
+    } else {
+        rf.logger.Println("unlock")
+    }
 }

@@ -34,14 +34,22 @@ type ApplyMsg struct {
 // thread-safe
 func (rf *Raft) Apply() {
     rf.mu.Lock()
-    defer rf.mu.Unlock()
+    rf.logger.Println("apply lock")
 
+    defer func() {
+        rf.mu.Unlock()
+        rf.logger.Println("apply unlock")
+    }()
+
+    rf.logger.Printf("apply from %d to %d\n", rf.lastApplied+1, rf.commitIndex)
     for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
+        rf.logger.Printf("try to send index %d to applyCh\n", i)
         rf.applyCh <- ApplyMsg{
             CommandValid: true,
             Command:      rf.log[i].Command,
             CommandIndex: i,
         }
+        rf.logger.Printf("already sent index %d to applyCh\n", i)
     }
 
     rf.lastApplied = rf.commitIndex

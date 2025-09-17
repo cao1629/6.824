@@ -151,8 +151,11 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // Now I'm a leader. I'm sending AppendEntries RPC to one peer.
 func (rf *Raft) AppendEntriesTo(peer int) {
     rf.mu.Lock()
+    rf.logLockUnlock(true)
+
     if rf.state != Leader {
         rf.mu.Unlock()
+        rf.logLockUnlock(false)
         return
     }
     expectedTerm := rf.currentTerm
@@ -192,6 +195,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     rf.logRpc(rf.me, peer, "APPEND_ENTRIES ARGS", rf.currentTerm, args.RpcId, detail)
 
     rf.mu.Unlock()
+    rf.logLockUnlock(false)
 
     reply := AppendEntriesReply{}
 
@@ -202,7 +206,11 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     }
 
     rf.mu.Lock()
-    defer rf.mu.Unlock()
+    rf.logLockUnlock(true)
+    defer func() {
+        rf.mu.Unlock()
+        rf.logLockUnlock(false)
+    }()
 
     if didUpdateTerm := rf.mayUpdateTerm(reply.Term, peer); didUpdateTerm {
         // I don't need to handle the reply anymore. Since I learned a higher term, and became a follower.
@@ -216,7 +224,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
         }
 
         rf.logRpc(rf.me, peer, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
-        rf.persist()
+        //rf.persist()
         return
     }
 

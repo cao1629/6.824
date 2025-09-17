@@ -19,6 +19,8 @@ package raft
 
 import (
     "fmt"
+    "log"
+
     //	"bytes"
     "os"
     "sync"
@@ -77,6 +79,7 @@ type Raft struct {
 
     // debugging
     runtimeLogFile *os.File
+    logger         *log.Logger
 }
 
 // return currentTerm and whether this server
@@ -100,9 +103,15 @@ func (rf *Raft) GetState() (int, bool) {
 //
 // #1 I need to check if this one
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
+    rf.logEnterStart()
     // Your code here (2B).
     rf.mu.Lock()
-    defer rf.mu.Unlock()
+    rf.logLockUnlock(true)
+    defer rf.logFinishStart()
+    defer func() {
+        rf.mu.Unlock()
+        rf.logLockUnlock(false)
+    }()
 
     if rf.state != Leader {
         return 0, 0, false
@@ -179,6 +188,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
     rf.runtimeLogFile, _ = os.Create(fmt.Sprintf("raft-%d-%d.log", time.Now().Second(), rf.me))
 
     rf.runtimeLogFile.Truncate(0)
+
+    rf.logger = log.New(rf.runtimeLogFile, "", log.Ltime|log.Lmicroseconds)
 
     rf.applyCh = applyCh
 

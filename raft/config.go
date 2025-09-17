@@ -245,7 +245,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
     rf := cfg.rafts[i]
     cfg.mu.Unlock()
     if rf == nil {
-        return // ???
+        return
     }
 
     for m := range applyCh {
