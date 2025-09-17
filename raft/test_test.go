@@ -1501,7 +1501,7 @@ func mysnapcommon(t *testing.T, name string, disconnect bool, reliable bool, cra
         // an InstallSnapshot RPC isn't required for
         // TestSnapshotBasic2D().
         // cfg.one(rand.Int(), servers, true)
-        cfg.one(100, servers, false)
+        cfg.one(100, servers, true)
     } else {
         cfg.one(200, servers-1, true)
     }
