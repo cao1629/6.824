@@ -82,7 +82,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // (a) my log is shorter than the leader's log
     if args.PrevLogIndex >= len(rf.log) {
 
-        detail := map[string]interface{}{
+        detail = map[string]interface{}{
             "Term":    rf.currentTerm,
             "Success": false,
             "Reason":  "Short log",
@@ -151,11 +151,11 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // Now I'm a leader. I'm sending AppendEntries RPC to one peer.
 func (rf *Raft) AppendEntriesTo(peer int) {
     rf.mu.Lock()
-    rf.logLockUnlock(true)
+    //rf.logLockUnlock(true)
 
     if rf.state != Leader {
         rf.mu.Unlock()
-        rf.logLockUnlock(false)
+        //rf.logLockUnlock(false)
         return
     }
     expectedTerm := rf.currentTerm
@@ -164,12 +164,12 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     // the nextIndex for that follower might be 1 + my log length.
     // In this case, I won't send any entries in the next AppendEntriesTo call.
     //
+    rf.logger.Printf("%v", rf.log)
     args := AppendEntriesArgs{
         Term:         rf.currentTerm,
         LeaderId:     rf.me,
         PrevLogIndex: rf.nextIndex[peer] - 1,
         PrevLogTerm:  rf.log[rf.nextIndex[peer]-1].Term,
-        //Entries:      rf.log[rf.nextIndex[peer]:],
         LeaderCommit: rf.commitIndex,
         RpcId:        rpcId.Add(1),
     }
@@ -195,7 +195,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     rf.logRpc(rf.me, peer, "APPEND_ENTRIES ARGS", rf.currentTerm, args.RpcId, detail)
 
     rf.mu.Unlock()
-    rf.logLockUnlock(false)
+    //rf.logLockUnlock(false)
 
     reply := AppendEntriesReply{}
 
@@ -206,10 +206,10 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     }
 
     rf.mu.Lock()
-    rf.logLockUnlock(true)
+    //rf.logLockUnlock(true)
     defer func() {
         rf.mu.Unlock()
-        rf.logLockUnlock(false)
+        //rf.logLockUnlock(false)
     }()
 
     if didUpdateTerm := rf.mayUpdateTerm(reply.Term, peer); didUpdateTerm {

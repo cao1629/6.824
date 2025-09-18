@@ -105,14 +105,14 @@ func (rf *Raft) GetState() (int, bool) {
 //
 // #1 I need to check if this one
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-    rf.logEnterStart()
+    //rf.logEnterStart()
     // Your code here (2B).
     rf.mu.Lock()
-    rf.logLockUnlock(true)
-    defer rf.logFinishStart()
+    //rf.logLockUnlock(true)
+    //defer rf.logFinishStart()
     defer func() {
         rf.mu.Unlock()
-        rf.logLockUnlock(false)
+        //rf.logLockUnlock(false)
     }()
 
     if rf.state != Leader {

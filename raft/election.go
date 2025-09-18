@@ -31,10 +31,10 @@ type RequestVoteReply struct {
 // I could be a leader, candidate, or a follower.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
     rf.mu.Lock()
-    rf.logLockUnlock(true)
+    //rf.logLockUnlock(true)
     defer func() {
         rf.mu.Unlock()
-        rf.logLockUnlock(false)
+        //rf.logLockUnlock(false)
     }()
 
     detail := map[string]interface{}{
@@ -174,7 +174,7 @@ func (rf *Raft) isContextLost(expectedSeverState State, term int) bool {
 
 func (rf *Raft) StartElection() {
     rf.mu.Lock()
-    rf.logLockUnlock(true)
+    //rf.logLockUnlock(true)
     rf.currentTerm++
 
     rf.logStateChange(rf.state, Candidate, rf.currentTerm, "election timeout")
@@ -184,7 +184,7 @@ func (rf *Raft) StartElection() {
 
     electionTerm := rf.currentTerm
     rf.mu.Unlock()
-    rf.logLockUnlock(false)
+    //rf.logLockUnlock(false)
 
     voteGrantedCh := make(chan bool)
 
@@ -210,14 +210,14 @@ func (rf *Raft) StartElection() {
             select {
             case voteGranted := <-voteGrantedCh:
                 rf.mu.Lock()
-                rf.logLockUnlock(true)
+                //rf.logLockUnlock(true)
                 // At this point, I expect myself to be a candidate. However, I may have become a follower or leader.
                 // 1. If I have become a follower, which means I have learned a higher term, then I should stop the election.
                 // 2. If I have become a leader, which means I have received enough votes. But this case seems never to happen.
                 if rf.isContextLost(Candidate, electionTerm) {
                     // This round of election is no longer valid.
                     rf.mu.Unlock()
-                    rf.logLockUnlock(false)
+                    //rf.logLockUnlock(false)
                     break
                 }
 
@@ -238,12 +238,12 @@ func (rf *Raft) StartElection() {
 
                         // I've received enough votes and become a leader. Terminate this goroutine to ignore the remaining votes.
                         rf.mu.Unlock()
-                        rf.logLockUnlock(false)
+                        //rf.logLockUnlock(false)
                         break
                     }
                 }
                 rf.mu.Unlock()
-                rf.logLockUnlock(false)
+                //rf.logLockUnlock(false)
             }
         }
     }()
@@ -253,7 +253,7 @@ func (rf *Raft) StartElection() {
 // If the peer grants my vote, return true. Otherwise return false.
 func (rf *Raft) RequestVoteFrom(peer int) bool {
     rf.mu.Lock()
-    rf.logLockUnlock(true)
+    //rf.logLockUnlock(true)
     args := RequestVoteArgs{
         Term:         rf.currentTerm,
         CandidateId:  rf.me,
@@ -271,7 +271,7 @@ func (rf *Raft) RequestVoteFrom(peer int) bool {
     rf.logRpc(rf.me, peer, "REQUEST_VOTE ARGS", rf.currentTerm, args.RpcId, detail)
 
     rf.mu.Unlock()
-    rf.logLockUnlock(false)
+    //rf.logLockUnlock(false)
 
     if ok := rf.sendRequestVote(peer, &args, &reply); !ok {
         return false
@@ -284,10 +284,10 @@ func (rf *Raft) RequestVoteFrom(peer int) bool {
     rf.logRpc(rf.me, peer, "REQUEST_VOTE REPLY", rf.currentTerm, args.RpcId, detail)
 
     rf.mu.Lock()
-    rf.logLockUnlock(true)
+    //rf.logLockUnlock(true)
     defer func() {
         rf.mu.Unlock()
-        rf.logLockUnlock(false)
+        //rf.logLockUnlock(false)
     }()
 
     if didUpdate := rf.mayUpdateTerm(reply.Term, peer); didUpdate {

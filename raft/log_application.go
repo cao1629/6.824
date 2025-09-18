@@ -69,5 +69,9 @@ func (rf *Raft) runApply() {
         for _, msg := range msgs {
             rf.applyCh <- msg
         }
+
+        rf.mu.Lock()
+        rf.lastApplied = rf.commitIndex
+        rf.mu.Unlock()
     }
 }

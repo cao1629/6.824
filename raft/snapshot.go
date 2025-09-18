@@ -49,16 +49,16 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
     rf.mu.Lock()
     defer rf.mu.Unlock()
 
-    if index > rf.commitIndex || index <= rf.lastIncludedIndex {
-        return
-    }
-
-    rf.lastIncludedIndex = index
-    rf.lastIncludedTerm = rf.log[index].Term
-    rf.snapshot = snapshot
-
-    // Trim the existing log
-    newLog := make([]LogEntry, len(rf.log)-index) // len = 0, cap = len(rf.log) - index
-    newLog = append(newLog, rf.log[index+1:]...)
-    rf.log = newLog
+    //if index > rf.commitIndex || index <= rf.lastIncludedIndex {
+    //    return
+    //}
+    //
+    //rf.lastIncludedIndex = index
+    //rf.lastIncludedTerm = rf.log[index].Term
+    //rf.snapshot = snapshot
+    //
+    //// Trim the existing log
+    //newLog := make([]LogEntry, len(rf.log)-index) // len = 0, cap = len(rf.log) - index
+    //newLog = append(newLog, rf.log[index+1:]...)
+    //rf.log = newLog
 }
