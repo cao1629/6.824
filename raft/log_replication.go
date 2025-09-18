@@ -121,7 +121,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
         }
 
         // When commitIndex is updated, we need to apply log[lastApplied+1 : commitIndex] to the state machine
-        go rf.Apply()
+        rf.applyCond.Signal()
     }
 
     // Success
@@ -279,7 +279,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     if newCommitIndex > rf.commitIndex {
         rf.logCommitIndexUpdate(rf.commitIndex, newCommitIndex)
         rf.commitIndex = newCommitIndex
-        go rf.Apply()
+        rf.applyCond.Signal()
     }
 
     detail = map[string]interface{}{

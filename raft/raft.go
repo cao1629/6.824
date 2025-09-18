@@ -74,8 +74,10 @@ type Raft struct {
 
     lastTimeReceivedHeartbeat time.Time
 
-    applyCh chan ApplyMsg
-    killCh  chan struct{}
+    applyCh   chan ApplyMsg
+    applyCond *sync.Cond
+
+    killCh chan struct{}
 
     // debugging
     runtimeLogFile *os.File
@@ -192,6 +194,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
     rf.logger = log.New(rf.runtimeLogFile, "", log.Ltime|log.Lmicroseconds)
 
     rf.applyCh = applyCh
+    rf.applyCond = sync.NewCond(&rf.mu)
 
     rf.lastTimeReceivedHeartbeat = time.Now()
 
@@ -211,6 +214,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
     // initialize from state persisted before a crash
     rf.readPersist(rf.persister.ReadRaftState())
+
+    go func() {
+        rf.runApply()
+    }()
 
     return rf
 }

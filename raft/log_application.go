@@ -32,26 +32,42 @@ type ApplyMsg struct {
 
 // Apply log[lastApplied+1 : commitIndex] to the state machine
 // thread-safe
-func (rf *Raft) Apply() {
-    rf.mu.Lock()
-    rf.logger.Println("apply lock")
+//func (rf *Raft) Apply() {
+//    rf.mu.Lock()
+//
+//
+//    rf.logger.Printf("apply from %d to %d\n", rf.lastApplied+1, rf.commitIndex)
+//    for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
+//        rf.logger.Printf("try to send index %d to applyCh\n", i)
+//        rf.applyCh <- ApplyMsg{
+//            CommandValid: true,
+//            Command:      rf.log[i].Command,
+//            CommandIndex: i,
+//        }
+//        rf.logger.Printf("already sent index %d to applyCh\n", i)
+//    }
+//
+//    rf.lastApplied = rf.commitIndex
+//}
 
-    defer func() {
-        rf.mu.Unlock()
-        rf.logger.Println("apply unlock")
-    }()
+func (rf *Raft) runApply() {
+    for {
+        rf.mu.Lock()
+        rf.applyCond.Wait()
+        var msgs []ApplyMsg
 
-    rf.logger.Printf("apply from %d to %d\n", rf.lastApplied+1, rf.commitIndex)
-    for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
-        rf.logger.Printf("try to send index %d to applyCh\n", i)
-        rf.applyCh <- ApplyMsg{
-            CommandValid: true,
-            Command:      rf.log[i].Command,
-            CommandIndex: i,
+        for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
+            msgs = append(msgs, ApplyMsg{
+                CommandValid: true,
+                Command:      rf.log[i].Command,
+                CommandIndex: i,
+            })
         }
-        rf.logger.Printf("already sent index %d to applyCh\n", i)
+
+        rf.mu.Unlock()
+
+        for _, msg := range msgs {
+            rf.applyCh <- msg
+        }
     }
-
-    rf.lastApplied = rf.commitIndex
-
 }
