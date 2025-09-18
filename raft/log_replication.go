@@ -5,12 +5,6 @@ import (
     "time"
 )
 
-type LogEntry struct {
-    Term         int
-    Command      interface{}
-    CommandValid bool
-}
-
 type AppendEntriesArgs struct {
     Term         int
     LeaderId     int
@@ -49,7 +43,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
         "PrevLogTerm":  args.PrevLogTerm,
         "Entries":      args.Entries,
         "LeaderCommit": args.LeaderCommit,
-        "Log":          rf.log,
+        //"Log":          rf.log,
     }
 
     rf.logRpc(args.LeaderId, rf.me, "APPEND_ENTRIES ARGS", rf.currentTerm, args.RpcId, detail)
@@ -68,7 +62,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
         return
     }
 
-    if didUpdateTerm := rf.mayUpdateTerm(args.Term, args.LeaderId); !didUpdateTerm {
+    if didUpdateTerm := rf.mayUpdateTerm(args.Term); !didUpdateTerm {
         // I received an AppendEntries RPC from someone with the same term.
         // What if I'm a candidate and I receive an AppendEntries RPC from a leader with the same term?
         // I should become a follower, reset my votedFor, and reset my election timer.
@@ -80,7 +74,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
     // Check if log matches.
     // (a) my log is shorter than the leader's log
-    if args.PrevLogIndex >= len(rf.log) {
+    if args.PrevLogIndex > rf.raftLog.GetActualLastIndex() {
 
         detail = map[string]interface{}{
             "Term":    rf.currentTerm,
@@ -92,7 +86,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     }
 
     // (b) term does not match
-    if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+    if rf.raftLog.GetTermAt(args.PrevLogIndex) != args.PrevLogTerm {
         detail = map[string]interface{}{
             "Term":    rf.currentTerm,
             "Success": false,
@@ -106,15 +100,15 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
     // Append entries to my log.
     if len(args.Entries) != 0 {
-        rf.log = append(rf.log[:args.PrevLogIndex+1], args.Entries...)
+        rf.raftLog.Append(args.Entries)
     }
 
     // Try to update commitIndex
     if args.LeaderCommit > rf.commitIndex {
 
-        if args.LeaderCommit > len(rf.log)-1 {
-            rf.logCommitIndexUpdate(rf.commitIndex, len(rf.log)-1)
-            rf.commitIndex = len(rf.log) - 1
+        if args.LeaderCommit > rf.raftLog.GetActualLastIndex() {
+            rf.logCommitIndexUpdate(rf.commitIndex, rf.raftLog.GetActualLastIndex())
+            rf.commitIndex = rf.raftLog.GetActualLastIndex()
         } else {
             rf.logCommitIndexUpdate(rf.commitIndex, args.LeaderCommit)
             rf.commitIndex = args.LeaderCommit
@@ -127,9 +121,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // Success
     reply.Success = true
     detail = map[string]interface{}{
-        "Term":      rf.currentTerm,
-        "Success":   true,
-        "Log":       rf.log,
+        "Term":    rf.currentTerm,
+        "Success": true,
+        //"Log":       rf.log,
         "CommitIdx": rf.commitIndex,
     }
     rf.logRpc(args.LeaderId, rf.me, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
@@ -149,7 +143,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 
 // sync
 // Now I'm a leader. I'm sending AppendEntries RPC to one peer.
-func (rf *Raft) AppendEntriesTo(peer int) {
+func (rf *Raft) AppendEntriesTo(server int) {
     rf.mu.Lock()
     //rf.logLockUnlock(true)
 
@@ -164,35 +158,40 @@ func (rf *Raft) AppendEntriesTo(peer int) {
     // the nextIndex for that follower might be 1 + my log length.
     // In this case, I won't send any entries in the next AppendEntriesTo call.
     //
-    rf.logger.Printf("%v", rf.log)
     args := AppendEntriesArgs{
         Term:         rf.currentTerm,
         LeaderId:     rf.me,
-        PrevLogIndex: rf.nextIndex[peer] - 1,
-        PrevLogTerm:  rf.log[rf.nextIndex[peer]-1].Term,
+        PrevLogIndex: rf.nextIndex[server] - 1,
+        PrevLogTerm:  rf.raftLog.GetPrevTerm(rf.nextIndex[server]),
         LeaderCommit: rf.commitIndex,
         RpcId:        rpcId.Add(1),
     }
 
-    if rf.nextIndex[peer] < len(rf.log) {
-        args.Entries = rf.log[rf.nextIndex[peer]:]
+    if rf.nextIndex[server]-1 == rf.raftLog.LastIncludedIndex {
+        go rf.InstallSnapshotOn(server)
+        rf.mu.Unlock()
+        return
+    }
+
+    if rf.nextIndex[server] <= rf.raftLog.GetActualLastIndex() {
+        args.Entries = rf.raftLog.GetEntries(rf.nextIndex[server], rf.raftLog.GetActualLastIndex())
     }
 
     detail := map[string]interface{}{
-        "LogLen":        len(rf.log),
-        "Log":           rf.log,
+        //"LogLen":        len(rf.log),
+        //"Log":           rf.log,
         "CommitIdx":     rf.commitIndex,
         "MatchIndex":    rf.matchIndex,
         "PrevLogIdx":    args.PrevLogIndex,
         "PrevLogTerm":   args.PrevLogTerm,
-        "PeerNextIndex": rf.nextIndex[peer],
+        "PeerNextIndex": rf.nextIndex[server],
         "NextIndex":     rf.nextIndex,
     }
 
-    if rf.nextIndex[peer] < len(rf.log) {
-        detail["ToSend"] = rf.log[rf.nextIndex[peer]:]
-    }
-    rf.logRpc(rf.me, peer, "APPEND_ENTRIES ARGS", rf.currentTerm, args.RpcId, detail)
+    //if rf.nextIndex[server] < len(rf.log) {
+    //    detail["ToSend"] = rf.log[rf.nextIndex[server]:]
+    //}
+    rf.logRpc(rf.me, server, "APPEND_ENTRIES ARGS", rf.currentTerm, args.RpcId, detail)
 
     rf.mu.Unlock()
     //rf.logLockUnlock(false)
@@ -201,7 +200,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
 
     // When messages get lost or the server is down, labrpc will stimulate a timeout and return a false reply.
     // We just ignore the reply.
-    if ok := rf.sendAppendEntries(peer, &args, &reply); !ok {
+    if ok := rf.sendAppendEntries(server, &args, &reply); !ok {
         return
     }
 
@@ -212,7 +211,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
         //rf.logLockUnlock(false)
     }()
 
-    if didUpdateTerm := rf.mayUpdateTerm(reply.Term, peer); didUpdateTerm {
+    if didUpdateTerm := rf.mayUpdateTerm(reply.Term); didUpdateTerm {
         // I don't need to handle the reply anymore. Since I learned a higher term, and became a follower.
         // The RequestVote RPC I sent when I was a leader was meaningless.
 
@@ -223,13 +222,13 @@ func (rf *Raft) AppendEntriesTo(peer int) {
             "NextIndex":  rf.nextIndex,
         }
 
-        rf.logRpc(rf.me, peer, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
+        rf.logRpc(rf.me, server, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
         //rf.persist()
         return
     }
 
     // I expect myself to be a leader here. However, it is possible that I am not a leader anymore.
-    // how come? received a higher term from another peer.
+    // how come? received a higher term from another server.
     if rf.isContextLost(Leader, expectedTerm) {
         detail = map[string]interface{}{
             "Term":       reply.Term,
@@ -238,24 +237,24 @@ func (rf *Raft) AppendEntriesTo(peer int) {
             "NextIndex":  rf.nextIndex,
         }
 
-        rf.logRpc(rf.me, peer, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
+        rf.logRpc(rf.me, server, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
         return
     }
 
     // Check reply.Success
     // how come reply.Success is false?
-    // 1. The other peer has a higher term than me. We already handled this case above.
+    // 1. The other server has a higher term than me. We already handled this case above.
     //
     // 2. Log doesn't match.
-    // (a) I'm a leader. My log is longer than the other peer's log. prevLogIndex doesn't make sense.
-    // (b) I'm a leader. The other peer's log is not shorter than mine, but its log at prevLogIndex has a different term than prevLogTerm.
+    // (a) I'm a leader. My log is longer than the other server's log. prevLogIndex doesn't make sense.
+    // (b) I'm a leader. The other server's log is not shorter than mine, but its log at prevLogIndex has a different term than prevLogTerm.
     //
     // 3. Network failure
     // no need to decrement nextIndex
     if !reply.Success {
         // Only decrement
-        if rf.nextIndex[peer] > 1 {
-            rf.nextIndex[peer]--
+        if rf.nextIndex[server] > 1 {
+            rf.nextIndex[server]--
         }
         detail = map[string]interface{}{
             "Term":       reply.Term,
@@ -264,15 +263,15 @@ func (rf *Raft) AppendEntriesTo(peer int) {
             "NextIndex":  rf.nextIndex,
         }
 
-        rf.logRpc(rf.me, peer, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
+        rf.logRpc(rf.me, server, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
         return
     }
 
-    rf.matchIndex[peer] = args.PrevLogIndex + len(args.Entries)
+    rf.matchIndex[server] = args.PrevLogIndex + len(args.Entries)
 
-    rf.nextIndex[peer] = rf.matchIndex[peer] + 1
+    rf.nextIndex[server] = rf.matchIndex[server] + 1
 
-    // We just updated matchIndex for peer. Maybe we can update commitIndex.
+    // We just updated matchIndex for server. Maybe we can update commitIndex.
     newCommitIndex := rf.findCommitIndex()
 
     // it is possible that newCommitIndex = rf.commitIndex
@@ -289,7 +288,7 @@ func (rf *Raft) AppendEntriesTo(peer int) {
         "NextIndex":  rf.nextIndex,
     }
 
-    rf.logRpc(rf.me, peer, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
+    rf.logRpc(rf.me, server, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
 }
 
 // Now I'm a leader. I'm sending AppendEntries RPC to all other peers concurently.

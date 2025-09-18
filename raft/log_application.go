@@ -14,7 +14,7 @@ package raft
 type ApplyMsg struct {
     // indicates if this message contains a newly committed log entry
     // if true, this ApplyMsg contains a command message
-    // if false, this ApplyMsg contains a snapshot message
+    // if false, this ApplyMsg contains a Snapshot message
     CommandValid bool
 
     // command to apply to state machine
@@ -30,26 +30,6 @@ type ApplyMsg struct {
     SnapshotIndex int
 }
 
-// Apply log[lastApplied+1 : commitIndex] to the state machine
-// thread-safe
-//func (rf *Raft) Apply() {
-//    rf.mu.Lock()
-//
-//
-//    rf.logger.Printf("apply from %d to %d\n", rf.lastApplied+1, rf.commitIndex)
-//    for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
-//        rf.logger.Printf("try to send index %d to applyCh\n", i)
-//        rf.applyCh <- ApplyMsg{
-//            CommandValid: true,
-//            Command:      rf.log[i].Command,
-//            CommandIndex: i,
-//        }
-//        rf.logger.Printf("already sent index %d to applyCh\n", i)
-//    }
-//
-//    rf.lastApplied = rf.commitIndex
-//}
-
 func (rf *Raft) runApply() {
     for {
         rf.mu.Lock()
@@ -59,7 +39,7 @@ func (rf *Raft) runApply() {
         for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
             msgs = append(msgs, ApplyMsg{
                 CommandValid: true,
-                Command:      rf.log[i].Command,
+                Command:      rf.raftLog.GetCommandAt(i),
                 CommandIndex: i,
             })
         }

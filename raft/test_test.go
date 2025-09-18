@@ -1488,7 +1488,7 @@ func mysnapcommon(t *testing.T, name string, disconnect bool, reliable bool, cra
         cfg.one(3, servers-1, true)
     }
 
-    // perhaps send enough to get a snapshot
+    // perhaps send enough to get a Snapshot
     nn := 20
     // 10, 11, ...., 29
     for i := 0; i < nn; i++ {
@@ -1511,7 +1511,7 @@ func mysnapcommon(t *testing.T, name string, disconnect bool, reliable bool, cra
     }
     if disconnect {
         // reconnect a follower, who maybe behind and
-        // needs to rceive a snapshot to catch up.
+        // needs to rceive a Snapshot to catch up.
         cfg.connect(victim)
         cfg.one(1000, servers, true)
         leader1 = cfg.checkOneLeader()
@@ -1553,7 +1553,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
             cfg.one(rand.Int(), servers-1, true)
         }
 
-        // perhaps send enough to get a snapshot
+        // perhaps send enough to get a Snapshot
         nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
         for i := 0; i < nn; i++ {
             // cfg.rafts[sender].Start(rand.Int())
@@ -1576,7 +1576,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
         }
         if disconnect {
             // reconnect a follower, who maybe behind and
-            // needs to rceive a snapshot to catch up.
+            // needs to rceive a Snapshot to catch up.
             cfg.connect(victim)
             cfg.one(rand.Int(), servers, true)
             leader1 = cfg.checkOneLeader()
@@ -1592,7 +1592,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 }
 
 func TestSnapshotBasic2D(t *testing.T) {
-    mysnapcommon(t, "Test (2D): snapshots basic", false, true, false)
+    snapcommon(t, "Test (2D): snapshots basic", false, true, false)
 }
 
 func TestSnapshotInstall2D(t *testing.T) {
@@ -1614,7 +1614,7 @@ func TestSnapshotInstallUnCrash2D(t *testing.T) {
 
 //
 // do the servers persist the snapshots, and
-// restart using snapshot along with the
+// restart using Snapshot along with the
 // tail of the log?
 //
 func TestSnapshotAllCrash2D(t *testing.T) {
@@ -1628,7 +1628,7 @@ func TestSnapshotAllCrash2D(t *testing.T) {
     cfg.one(rand.Int(), servers, true)
 
     for i := 0; i < iters; i++ {
-        // perhaps enough to get a snapshot
+        // perhaps enough to get a Snapshot
         nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
         for i := 0; i < nn; i++ {
             cfg.one(rand.Int(), servers, true)

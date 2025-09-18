@@ -63,12 +63,12 @@ func (rf *Raft) logCommitIndexUpdate(oldCommitIndex int, newCommitIndex int) {
 }
 
 func (rf *Raft) logApply(oldLastApplied int, newLastApplied int) {
-    var b strings.Builder
-    b.WriteString(fmt.Sprintf("%8d ", logicalClock.Add(1)))
-    b.WriteString(fmt.Sprintf("[%d %02d] ", rf.me, rf.currentTerm))
-    b.WriteString(fmt.Sprintf("[APPLY %d -> %d] ", oldLastApplied, newLastApplied))
-    b.WriteString(fmt.Sprintf("Applied: %v", rf.log[oldLastApplied+1:newLastApplied+1]))
-    rf.logger.Println(b.String())
+    //var b strings.Builder
+    //b.WriteString(fmt.Sprintf("%8d ", logicalClock.Add(1)))
+    //b.WriteString(fmt.Sprintf("[%d %02d] ", rf.me, rf.currentTerm))
+    //b.WriteString(fmt.Sprintf("[APPLY %d -> %d] ", oldLastApplied, newLastApplied))
+    //b.WriteString(fmt.Sprintf("Applied: %v", rf.log[oldLastApplied+1:newLastApplied+1]))
+    //rf.logger.Println(b.String())
 }
 
 func (rf *Raft) logEnterStart() {

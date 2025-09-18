@@ -60,14 +60,9 @@ type Raft struct {
     state State
 
     // log
-    log        []LogEntry
+    raftLog    *RaftLog
     nextIndex  []int
     matchIndex []int
-
-    // snapshot
-    lastIncludedIndex int
-    lastIncludedTerm  int
-    snapshot          []byte
 
     commitIndex int
     lastApplied int
@@ -119,17 +114,15 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
         return 0, 0, false
     }
 
-    rf.log = append(rf.log, LogEntry{
-        Term:         rf.currentTerm,
-        Command:      command,
-        CommandValid: true,
+    rf.raftLog.Append([]LogEntry{
+        {Term: rf.currentTerm, Command: command, CommandValid: true},
     })
 
-    rf.matchIndex[rf.me] = len(rf.log) - 1
+    rf.matchIndex[rf.me] = rf.raftLog.GetActualSize() - 1
 
     rf.persist()
 
-    return len(rf.log) - 1, rf.currentTerm, true
+    return rf.raftLog.GetActualLastIndex(), rf.currentTerm, true
 }
 
 // the tester doesn't halt goroutines created by Raft after each test,
@@ -172,7 +165,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
     rf.peers = peers
     rf.persister = persister
     rf.me = me
-    rf.currentTerm = 1
+    rf.currentTerm = 0
 
     rf.state = Follower
 
@@ -180,12 +173,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
     rf.matchIndex = make([]int, len(peers))
 
     rf.lastApplied = 0
+    rf.commitIndex = 0
 
-    rf.lastIncludedIndex = 0
-    rf.lastIncludedTerm = 0
-    rf.log = []LogEntry{
-        {0, 0, false},
-    }
+    rf.raftLog = NewRaftLog()
 
     rf.runtimeLogFile, _ = os.Create(fmt.Sprintf("raft-%d-%d.log", time.Now().Second(), rf.me))
 
@@ -277,7 +267,7 @@ func (rf *Raft) runLeader() {
 // If I learn a higher term, I update my term. If I'm not a follower, I become a follower.
 // If I'm currently a leader, I stop my heartbeat ticker.
 // If I'm currently a candidate, I reset the election ticker.
-func (rf *Raft) mayUpdateTerm(term int, from int) bool {
+func (rf *Raft) mayUpdateTerm(term int) bool {
 
     // xxx -> follower
     if term > rf.currentTerm {
@@ -296,34 +286,6 @@ func (rf *Raft) mayUpdateTerm(term int, from int) bool {
     }
 
     return false
-}
-
-type EntryInfo struct {
-    index int
-    term  int
-}
-
-// non-thread-safe
-func (rf *Raft) getEntriesToSend(peer int) []EntryInfo {
-    entriesInfo := make([]EntryInfo, len(rf.log)-rf.nextIndex[peer])
-    for i := rf.nextIndex[peer]; i < len(rf.log); i++ {
-        entriesInfo[i-rf.nextIndex[peer]] = EntryInfo{
-            index: i,
-            term:  rf.log[i].Term,
-        }
-    }
-    return entriesInfo
-}
-
-func (rf *Raft) getLogInfo() []EntryInfo {
-    entriesInfo := make([]EntryInfo, len(rf.log))
-    for i, entry := range rf.log {
-        entriesInfo[i] = EntryInfo{
-            index: i,
-            term:  entry.Term,
-        }
-    }
-    return entriesInfo
 }
 
 type State string

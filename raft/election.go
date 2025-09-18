@@ -69,7 +69,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
     // 2. If I'm currently a follower with a smaller term. I've probably voted for someone in this term.
     // I probably haven't voted for anyone.
     // In this case I just need to update my term, and vote for this candidate.
-    if didUpdateTerm := rf.mayUpdateTerm(args.Term, args.CandidateId); didUpdateTerm {
+    if didUpdateTerm := rf.mayUpdateTerm(args.Term); didUpdateTerm {
         if upToDateCandidate {
             rf.votedFor = args.CandidateId
             reply.VoteGranted = true
@@ -231,10 +231,10 @@ func (rf *Raft) StartElection() {
                         rf.logStateChange(Candidate, Leader, rf.currentTerm, "elected as a leader")
                         rf.state = Leader
                         for i := range rf.peers {
-                            rf.nextIndex[i] = len(rf.log)
+                            rf.nextIndex[i] = rf.raftLog.GetActualSize()
                             rf.matchIndex[i] = 0
                         }
-                        rf.matchIndex[rf.me] = len(rf.log) - 1
+                        rf.matchIndex[rf.me] = rf.raftLog.GetActualLastIndex()
 
                         // I've received enough votes and become a leader. Terminate this goroutine to ignore the remaining votes.
                         rf.mu.Unlock()
@@ -257,8 +257,8 @@ func (rf *Raft) RequestVoteFrom(peer int) bool {
     args := RequestVoteArgs{
         Term:         rf.currentTerm,
         CandidateId:  rf.me,
-        LastLogIndex: len(rf.log) - 1,
-        LastLogTerm:  rf.log[len(rf.log)-1].Term,
+        LastLogIndex: rf.raftLog.GetActualLastIndex(),
+        LastLogTerm:  rf.raftLog.GetLastTerm(),
         RpcId:        rpcId.Add(1),
     }
 
@@ -290,7 +290,7 @@ func (rf *Raft) RequestVoteFrom(peer int) bool {
         //rf.logLockUnlock(false)
     }()
 
-    if didUpdate := rf.mayUpdateTerm(reply.Term, peer); didUpdate {
+    if didUpdate := rf.mayUpdateTerm(reply.Term); didUpdate {
         return false
     }
 
@@ -301,8 +301,8 @@ func (rf *Raft) RequestVoteFrom(peer int) bool {
 // I'm the receiver of the RequestVote RPC.
 // I want to check if the candidate is an eligible candidate.
 func (rf *Raft) isCandidateLogUpToDate(candidateLastLogIndex, candidateLastLogTerm int) bool {
-    myLastLogIndex := len(rf.log) - 1
-    myLastLogTerm := rf.log[myLastLogIndex].Term
+    myLastLogIndex := rf.raftLog.GetActualLastIndex()
+    myLastLogTerm := rf.raftLog.GetLastTerm()
 
     if candidateLastLogTerm > myLastLogTerm {
         return true

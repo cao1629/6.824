@@ -213,8 +213,8 @@ func (cfg *config) applier(i int, applyCh chan ApplyMsg) {
 // returns "" or error string
 func (cfg *config) ingestSnap(i int, snapshot []byte, index int) string {
     if snapshot == nil {
-        log.Fatalf("nil snapshot")
-        return "nil snapshot"
+        log.Fatalf("nil Snapshot")
+        return "nil Snapshot"
     }
     r := bytes.NewBuffer(snapshot)
     d := labgob.NewDecoder(r)
@@ -222,11 +222,11 @@ func (cfg *config) ingestSnap(i int, snapshot []byte, index int) string {
     var xlog []interface{}
     if d.Decode(&lastIncludedIndex) != nil ||
         d.Decode(&xlog) != nil {
-        log.Fatalf("snapshot decode error")
-        return "snapshot Decode() error"
+        log.Fatalf("Snapshot decode error")
+        return "Snapshot Decode() error"
     }
     if index != -1 && index != lastIncludedIndex {
-        err := fmt.Sprintf("server %v snapshot doesn't match m.SnapshotIndex", i)
+        err := fmt.Sprintf("server %v Snapshot doesn't match m.SnapshotIndex", i)
         return err
     }
     cfg.logs[i] = map[int]interface{}{}
@@ -239,7 +239,7 @@ func (cfg *config) ingestSnap(i int, snapshot []byte, index int) string {
 
 const SnapShotInterval = 10
 
-// periodically snapshot raft state
+// periodically Snapshot raft state
 func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
     cfg.mu.Lock()
     rf := cfg.rafts[i]
@@ -285,6 +285,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
                 }
                 e.Encode(xlog)
                 rf.Snapshot(m.CommandIndex, w.Bytes())
+                //rf.Snapshot(0, w.Bytes())
             }
         } else {
             // Ignore other types of ApplyMsg.
@@ -335,7 +336,7 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 
         snapshot := cfg.saved[i].ReadSnapshot()
         if snapshot != nil && len(snapshot) > 0 {
-            // mimic KV server and process snapshot now.
+            // mimic KV server and process Snapshot now.
             // ideally Raft should send it up on applyCh...
             err := cfg.ingestSnap(i, snapshot, -1)
             if err != "" {

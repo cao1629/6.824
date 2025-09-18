@@ -84,7 +84,7 @@ func (rf *Raft) persist() {
     e := labgob.NewEncoder(w)
     e.Encode(rf.currentTerm)
     e.Encode(rf.votedFor)
-    e.Encode(rf.log)
+    e.Encode(rf.raftLog)
     raftState := w.Bytes()
     rf.persister.SaveRaftState(raftState)
 }
@@ -112,7 +112,7 @@ func (rf *Raft) readPersist(data []byte) {
     // }
     var currentTerm int
     var votedFor int
-    var log []LogEntry
+    var raftLog RaftLog
 
     r := bytes.NewBuffer(data)
     d := labgob.NewDecoder(r)
@@ -121,6 +121,6 @@ func (rf *Raft) readPersist(data []byte) {
     rf.currentTerm = currentTerm
     d.Decode(&votedFor)
     rf.votedFor = votedFor
-    d.Decode(&log)
-    rf.log = log
+    d.Decode(&raftLog)
+    rf.raftLog = &raftLog
 }
