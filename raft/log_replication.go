@@ -167,7 +167,8 @@ func (rf *Raft) AppendEntriesTo(server int) {
         RpcId:        rpcId.Add(1),
     }
 
-    if rf.nextIndex[server]-1 == rf.raftLog.LastIncludedIndex {
+    // If my log has never been snapshotted before, then lastIncludedIndex = 0
+    if rf.nextIndex[server] > 1 && rf.nextIndex[server]-1 == rf.raftLog.LastIncludedIndex {
         go rf.InstallSnapshotOn(server)
         rf.mu.Unlock()
         return
@@ -178,8 +179,7 @@ func (rf *Raft) AppendEntriesTo(server int) {
     }
 
     detail := map[string]interface{}{
-        //"LogLen":        len(rf.log),
-        //"Log":           rf.log,
+        "Log":           rf.raftLog.TailLog,
         "CommitIdx":     rf.commitIndex,
         "MatchIndex":    rf.matchIndex,
         "PrevLogIdx":    args.PrevLogIndex,
@@ -188,9 +188,10 @@ func (rf *Raft) AppendEntriesTo(server int) {
         "NextIndex":     rf.nextIndex,
     }
 
-    //if rf.nextIndex[server] < len(rf.log) {
-    //    detail["ToSend"] = rf.log[rf.nextIndex[server]:]
-    //}
+    if rf.nextIndex[server] <= rf.raftLog.GetActualLastIndex() {
+        detail["ToSend"] = rf.raftLog.GetEntries(rf.nextIndex[server], rf.raftLog.GetActualLastIndex())
+    }
+
     rf.logRpc(rf.me, server, "APPEND_ENTRIES ARGS", rf.currentTerm, args.RpcId, detail)
 
     rf.mu.Unlock()

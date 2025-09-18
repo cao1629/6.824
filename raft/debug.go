@@ -37,9 +37,9 @@ func (rf *Raft) logRpc(caller int, callee int, rpcName string, term int, rpcId u
 
     b.WriteString(fmt.Sprintf("[%d %02d] ", rf.me, term))
     if isCaller {
-        b.WriteString(fmt.Sprintf("[%-15s %04d *%d -> %d CALLER] ", rpcName, rpcId, caller, callee))
+        b.WriteString(fmt.Sprintf("[CALLER %-15s %04d *%d -> %d] ", rpcName, rpcId, caller, callee))
     } else {
-        b.WriteString(fmt.Sprintf("[%-15s %04d %d -> *%d CALLEE] ", rpcName, rpcId, caller, callee))
+        b.WriteString(fmt.Sprintf("[CALLEE %-15s %04d %d -> *%d] ", rpcName, rpcId, caller, callee))
     }
 
     keys := make([]string, 0, len(detail))
