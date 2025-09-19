@@ -87,10 +87,10 @@ func (rf *Raft) logFinishStart() {
     rf.logger.Println(b.String())
 }
 
-func (rf *Raft) logLockUnlock(isLock bool) {
+func (rf *Raft) logLockUnlock(isLock bool, where string) {
     if isLock {
-        rf.logger.Println("lock")
+        rf.logger.Printf("%v: lock\n", where)
     } else {
-        rf.logger.Println("unlock")
+        rf.logger.Printf("%v: unlock\n", where)
     }
 }

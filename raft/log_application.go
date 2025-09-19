@@ -36,22 +36,35 @@ func (rf *Raft) runApply() {
         rf.applyCond.Wait()
         var msgs []ApplyMsg
 
-        for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
-            msgs = append(msgs, ApplyMsg{
-                CommandValid: true,
-                Command:      rf.raftLog.GetCommandAt(i),
-                CommandIndex: i,
-            })
+        if rf.pendingSnapshot {
+            snapshotMsg := ApplyMsg{
+                SnapshotValid: true,
+                Snapshot:      rf.raftLog.Snapshot,
+                SnapshotTerm:  rf.raftLog.LastIncludedTerm,
+                SnapshotIndex: rf.raftLog.LastIncludedIndex,
+            }
+            rf.pendingSnapshot = false
+            rf.mu.Unlock()
+
+            rf.applyCh <- snapshotMsg
+        } else {
+            for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
+                msgs = append(msgs, ApplyMsg{
+                    CommandValid: true,
+                    Command:      rf.raftLog.GetCommandAt(i),
+                    CommandIndex: i,
+                })
+            }
+
+            rf.mu.Unlock()
+
+            for _, msg := range msgs {
+                rf.applyCh <- msg
+            }
+            // what if interrupted here?
+            rf.mu.Lock()
+            rf.lastApplied = rf.commitIndex
+            rf.mu.Unlock()
         }
-
-        rf.mu.Unlock()
-
-        for _, msg := range msgs {
-            rf.applyCh <- msg
-        }
-
-        rf.mu.Lock()
-        rf.lastApplied = rf.commitIndex
-        rf.mu.Unlock()
     }
 }

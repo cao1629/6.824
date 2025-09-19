@@ -31,10 +31,10 @@ type RequestVoteReply struct {
 // I could be a leader, candidate, or a follower.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
     rf.mu.Lock()
-    //rf.logLockUnlock(true)
+    //rf.logLockUnlock(true, "RequestVote")
     defer func() {
         rf.mu.Unlock()
-        //rf.logLockUnlock(false)
+        //rf.logLockUnlock(false, "RequestVote")
     }()
 
     detail := map[string]interface{}{
@@ -174,7 +174,7 @@ func (rf *Raft) isContextLost(expectedSeverState State, term int) bool {
 
 func (rf *Raft) StartElection() {
     rf.mu.Lock()
-    //rf.logLockUnlock(true)
+    //rf.logLockUnlock(true, "StartElection")
     rf.currentTerm++
 
     rf.logStateChange(rf.state, Candidate, rf.currentTerm, "election timeout")
@@ -184,7 +184,7 @@ func (rf *Raft) StartElection() {
 
     electionTerm := rf.currentTerm
     rf.mu.Unlock()
-    //rf.logLockUnlock(false)
+    //rf.logLockUnlock(false, "StartElection")
 
     voteGrantedCh := make(chan bool)
 
@@ -210,14 +210,14 @@ func (rf *Raft) StartElection() {
             select {
             case voteGranted := <-voteGrantedCh:
                 rf.mu.Lock()
-                //rf.logLockUnlock(true)
+                //rf.logLockUnlock(true, "StartElection")
                 // At this point, I expect myself to be a candidate. However, I may have become a follower or leader.
                 // 1. If I have become a follower, which means I have learned a higher term, then I should stop the election.
                 // 2. If I have become a leader, which means I have received enough votes. But this case seems never to happen.
                 if rf.isContextLost(Candidate, electionTerm) {
                     // This round of election is no longer valid.
                     rf.mu.Unlock()
-                    //rf.logLockUnlock(false)
+                    //rf.logLockUnlock(false, "StartElection")
                     break
                 }
 
@@ -231,6 +231,7 @@ func (rf *Raft) StartElection() {
                         rf.logStateChange(Candidate, Leader, rf.currentTerm, "elected as a leader")
                         rf.state = Leader
                         for i := range rf.peers {
+                            rf.logger.Printf("%v\n", rf.raftLog.TailLog)
                             rf.nextIndex[i] = rf.raftLog.GetActualSize()
                             rf.matchIndex[i] = 0
                         }
@@ -238,12 +239,12 @@ func (rf *Raft) StartElection() {
 
                         // I've received enough votes and become a leader. Terminate this goroutine to ignore the remaining votes.
                         rf.mu.Unlock()
-                        //rf.logLockUnlock(false)
+                        rf.logLockUnlock(false, "StartElection")
                         break
                     }
                 }
                 rf.mu.Unlock()
-                //rf.logLockUnlock(false)
+                rf.logLockUnlock(false, "StartElection")
             }
         }
     }()
@@ -253,7 +254,7 @@ func (rf *Raft) StartElection() {
 // If the peer grants my vote, return true. Otherwise return false.
 func (rf *Raft) RequestVoteFrom(peer int) bool {
     rf.mu.Lock()
-    //rf.logLockUnlock(true)
+    //rf.logLockUnlock(true, "RequestVoteFrom")
     args := RequestVoteArgs{
         Term:         rf.currentTerm,
         CandidateId:  rf.me,
@@ -284,10 +285,10 @@ func (rf *Raft) RequestVoteFrom(peer int) bool {
     rf.logRpc(rf.me, peer, "REQUEST_VOTE REPLY", rf.currentTerm, args.RpcId, detail)
 
     rf.mu.Lock()
-    //rf.logLockUnlock(true)
+    //rf.logLockUnlock(true, "RequestVoteFrom")
     defer func() {
         rf.mu.Unlock()
-        //rf.logLockUnlock(false)
+        //rf.logLockUnlock(false, "RequestVoteFrom")
     }()
 
     if didUpdate := rf.mayUpdateTerm(reply.Term); didUpdate {

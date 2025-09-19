@@ -251,12 +251,15 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
     for m := range applyCh {
         err_msg := ""
         if m.SnapshotValid {
+            //
+            rf.logger.Println("applier-snap")
             if rf.CondInstallSnapshot(m.SnapshotTerm, m.SnapshotIndex, m.Snapshot) {
                 cfg.mu.Lock()
                 err_msg = cfg.ingestSnap(i, m.Snapshot, m.SnapshotIndex)
                 cfg.mu.Unlock()
             }
         } else if m.CommandValid {
+            cfg.rafts[i].logger.Printf("applier n.CommandIndex = %v,  cfg.lastApplied[i]+1 = %v", m.CommandIndex, cfg.lastApplied[i]+1)
             if m.CommandIndex != cfg.lastApplied[i]+1 {
                 err_msg = fmt.Sprintf("server %v apply out of order, expected index %v, got %v", i, cfg.lastApplied[i]+1, m.CommandIndex)
             }
@@ -284,8 +287,10 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
                     xlog = append(xlog, cfg.logs[i][j])
                 }
                 e.Encode(xlog)
+
+                // in between snapshotting this index from the Command ApplyMsg and sending its Snapshot ApplyMsg
+                // to ApplyCh, no more Command ApplyMsg should be sent to ApplyCh.
                 rf.Snapshot(m.CommandIndex, w.Bytes())
-                //rf.Snapshot(0, w.Bytes())
             }
         } else {
             // Ignore other types of ApplyMsg.

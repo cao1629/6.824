@@ -37,6 +37,10 @@ func (rl *RaftLog) Append(entries []LogEntry) {
     rl.TailLog = append(rl.TailLog, entries...)
 }
 
+func (rl *RaftLog) AppendAfter(entries []LogEntry, after int) {
+    rl.TailLog = append(rl.TailLog[:after-rl.LastIncludedIndex+1], entries...)
+}
+
 // not thread-safe
 func (rl *RaftLog) GetPrevTerm(index int) int {
     return rl.TailLog[index-rl.LastIncludedIndex-1].Term
@@ -60,4 +64,8 @@ func (rl *RaftLog) GetLastTerm() int {
 
 func (rl *RaftLog) GetCommandAt(index int) interface{} {
     return rl.TailLog[index-rl.LastIncludedIndex].Command
+}
+
+func (rl *RaftLog) SetTermAtZero(term int) {
+    rl.TailLog[0].Term = term
 }

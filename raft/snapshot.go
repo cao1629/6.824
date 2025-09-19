@@ -46,21 +46,32 @@ func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int,
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
     // Your code here (2D).
 
-    //rf.mu.Lock()
-    //defer rf.mu.Unlock()
-    //
-    //if index > rf.commitIndex || index <= rf.LastIncludedIndex {
-    //    return
-    //}
-    //
-    //rf.LastIncludedIndex = index
-    //rf.LastIncludedTerm = rf.log[index].Term
-    //rf.Snapshot = Snapshot
-    //
-    //// Trim the existing log
-    //newLog := make([]LogEntry, len(rf.log)-index) // len = 0, cap = len(rf.log) - index
-    //newLog = append(newLog, rf.log[index+1:]...)
-    //rf.log = newLog
+    rf.mu.Lock()
+    rf.logger.Printf("snapshot at index %d, log = %v\n", index, rf.raftLog.TailLog)
+    defer func() {
+        rf.mu.Unlock()
+    }()
+
+    if index > rf.commitIndex || index <= rf.raftLog.LastIncludedIndex {
+        return
+    }
+
+    rf.raftLog.LastIncludedTerm = rf.raftLog.GetTermAt(index)
+
+    // Trim the existing log
+    newLog := make([]LogEntry, 0, rf.raftLog.GetActualLastIndex()-index+1)
+    newLog = append(newLog, LogEntry{rf.raftLog.LastIncludedTerm, 0, true})
+    newLog = append(newLog, rf.raftLog.GetEntries(index+1, rf.raftLog.GetActualLastIndex())...)
+
+    rf.logger.Printf("%v\n", newLog)
+    rf.raftLog.LastIncludedIndex = index
+    rf.raftLog.Snapshot = snapshot
+
+    rf.raftLog.TailLog = newLog
+    rf.persist()
+
+    rf.pendingSnapshot = true
+    rf.applyCond.Signal()
 }
 
 type InstallSnapshotArgs struct {
@@ -71,6 +82,8 @@ type InstallSnapshotArgs struct {
     LastIncludedTerm  int
 
     Snapshot []byte
+
+    RpcId uint32
 }
 
 type InstallSnapshotReply struct {
@@ -95,7 +108,16 @@ func (rf *Raft) InstallSnapshotOn(server int) {
         LastIncludedIndex: rf.raftLog.LastIncludedIndex,
         LastIncludedTerm:  rf.raftLog.LastIncludedTerm,
         Snapshot:          clone(rf.raftLog.Snapshot),
+        RpcId:             rpcId.Add(1),
     }
+
+    detail := map[string]interface{}{
+        "LastIncludedIndex": args.LastIncludedIndex,
+        "LastIncludedTerm":  args.LastIncludedTerm,
+    }
+
+    rf.logRpc(rf.me, server, "INSTALL_SNAPSHOT ASRGS", rf.currentTerm, args.RpcId, detail)
+
     rf.mu.Unlock()
     reply := &InstallSnapshotReply{}
 
@@ -114,11 +136,23 @@ func (rf *Raft) InstallSnapshotOn(server int) {
 
     rf.nextIndex[server] = rf.raftLog.LastIncludedIndex + 1
     rf.matchIndex[server] = rf.raftLog.LastIncludedIndex
+
+    detail = map[string]interface{}{
+        "NextIndex":  rf.nextIndex[server],
+        "MatchIndex": rf.matchIndex[server],
+    }
+    rf.logRpc(rf.me, server, "INSTALL_SNAPSHOT REPLY", rf.currentTerm, args.RpcId, detail)
 }
 
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
     rf.mu.Lock()
-    defer rf.mu.Unlock()
+
+    detail := map[string]interface{}{
+        "LastIncludedIndex": args.LastIncludedIndex,
+        "LastIncludedTerm":  args.LastIncludedTerm,
+    }
+
+    rf.logRpc(args.LeaderId, rf.me, "INSTALL_SNAPSHOT ARGS", rf.currentTerm, args.RpcId, detail)
 
     reply.Term = rf.currentTerm
 
@@ -129,6 +163,10 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
     if didUpdateTerm := rf.mayUpdateTerm(args.Term); didUpdateTerm {
         //
     }
+
+    rf.logRpc(args.LeaderId, rf.me, "INSTALL_SNAPSHOT REPLY", rf.currentTerm, args.RpcId, map[string]interface{}{})
+
+    rf.mu.Unlock()
 
     rf.Snapshot(args.LastIncludedIndex, args.Snapshot)
 }

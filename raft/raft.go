@@ -72,6 +72,8 @@ type Raft struct {
     applyCh   chan ApplyMsg
     applyCond *sync.Cond
 
+    pendingSnapshot bool
+
     killCh chan struct{}
 
     // debugging
@@ -100,20 +102,23 @@ func (rf *Raft) GetState() (int, bool) {
 //
 // #1 I need to check if this one
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
+    rf.logger.Printf("%d START command %v", rf.me, command)
     //rf.logEnterStart()
     // Your code here (2B).
+    //rf.logger.Println("Start: try to get lock")
     rf.mu.Lock()
-    //rf.logLockUnlock(true)
+    //rf.logLockUnlock(true, "Start")
     //defer rf.logFinishStart()
     defer func() {
         rf.mu.Unlock()
-        //rf.logLockUnlock(false)
+        //rf.logLockUnlock(false, "Start")
     }()
 
     if rf.state != Leader {
         return 0, 0, false
     }
 
+    rf.logger.Printf("%d is leader (in fact %v), appending command %v to log", rf.me, rf.state, command)
     rf.raftLog.Append([]LogEntry{
         {Term: rf.currentTerm, Command: command, CommandValid: true},
     })
@@ -205,9 +210,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
     // initialize from state persisted before a crash
     rf.readPersist(rf.persister.ReadRaftState())
 
-    go func() {
-        rf.runApply()
-    }()
+    go rf.runApply()
 
     return rf
 }

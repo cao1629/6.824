@@ -29,7 +29,11 @@ type AppendEntriesReply struct {
 // Now I receive an AppendEntries RPC from a self-claimed leader.
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
     rf.mu.Lock()
-    defer rf.mu.Unlock()
+    //rf.logLockUnlock(true, "AppendEntries")
+    defer func() {
+        rf.mu.Unlock()
+        //rf.logLockUnlock(false, "AppendEntries")
+    }()
 
     rf.lastTimeReceivedHeartbeat = time.Now()
 
@@ -43,7 +47,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
         "PrevLogTerm":  args.PrevLogTerm,
         "Entries":      args.Entries,
         "LeaderCommit": args.LeaderCommit,
-        //"Log":          rf.log,
+        "Log":          rf.raftLog.TailLog,
     }
 
     rf.logRpc(args.LeaderId, rf.me, "APPEND_ENTRIES ARGS", rf.currentTerm, args.RpcId, detail)
@@ -94,13 +98,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
         }
 
         rf.logRpc(args.LeaderId, rf.me, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
-
         return
     }
 
     // Append entries to my log.
     if len(args.Entries) != 0 {
-        rf.raftLog.Append(args.Entries)
+        rf.raftLog.AppendAfter(args.Entries, args.PrevLogIndex)
     }
 
     // Try to update commitIndex
@@ -121,9 +124,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // Success
     reply.Success = true
     detail = map[string]interface{}{
-        "Term":    rf.currentTerm,
-        "Success": true,
-        //"Log":       rf.log,
+        "Term":      rf.currentTerm,
+        "Success":   true,
+        "Log":       rf.raftLog.TailLog,
         "CommitIdx": rf.commitIndex,
     }
     rf.logRpc(args.LeaderId, rf.me, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
@@ -145,11 +148,11 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // Now I'm a leader. I'm sending AppendEntries RPC to one peer.
 func (rf *Raft) AppendEntriesTo(server int) {
     rf.mu.Lock()
-    //rf.logLockUnlock(true)
+    //rf.logLockUnlock(true, "AppendEntriesTo")
 
     if rf.state != Leader {
         rf.mu.Unlock()
-        //rf.logLockUnlock(false)
+        //rf.logLockUnlock(false, "AppendEntriesTo")
         return
     }
     expectedTerm := rf.currentTerm
@@ -171,6 +174,7 @@ func (rf *Raft) AppendEntriesTo(server int) {
     if rf.nextIndex[server] > 1 && rf.nextIndex[server]-1 == rf.raftLog.LastIncludedIndex {
         go rf.InstallSnapshotOn(server)
         rf.mu.Unlock()
+        //rf.logLockUnlock(false, "AppendEntriesTo")
         return
     }
 
@@ -195,7 +199,7 @@ func (rf *Raft) AppendEntriesTo(server int) {
     rf.logRpc(rf.me, server, "APPEND_ENTRIES ARGS", rf.currentTerm, args.RpcId, detail)
 
     rf.mu.Unlock()
-    //rf.logLockUnlock(false)
+    //rf.logLockUnlock(false, "AppendEntriesTo")
 
     reply := AppendEntriesReply{}
 
@@ -206,10 +210,10 @@ func (rf *Raft) AppendEntriesTo(server int) {
     }
 
     rf.mu.Lock()
-    //rf.logLockUnlock(true)
+    //rf.logLockUnlock(true, "AppendEntriesTo")
     defer func() {
         rf.mu.Unlock()
-        //rf.logLockUnlock(false)
+        //rf.logLockUnlock(false, "AppendEntriesTo")
     }()
 
     if didUpdateTerm := rf.mayUpdateTerm(reply.Term); didUpdateTerm {
