@@ -43,11 +43,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     reply.Success = false
 
     detail := map[string]interface{}{
-        "PrevLogIndex": args.PrevLogIndex,
-        "PrevLogTerm":  args.PrevLogTerm,
-        "Entries":      args.Entries,
-        "LeaderCommit": args.LeaderCommit,
-        "Log":          rf.raftLog.TailLog,
+        "PrevLogIndex":      args.PrevLogIndex,
+        "PrevLogTerm":       args.PrevLogTerm,
+        "Entries":           args.Entries,
+        "LeaderCommit":      args.LeaderCommit,
+        "Log":               rf.raftLog.TailLog,
+        "LastIncludedIndex": rf.raftLog.LastIncludedIndex,
     }
 
     rf.logRpc(args.LeaderId, rf.me, "APPEND_ENTRIES ARGS", rf.currentTerm, args.RpcId, detail)
@@ -124,10 +125,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
     // Success
     reply.Success = true
     detail = map[string]interface{}{
-        "Term":      rf.currentTerm,
-        "Success":   true,
-        "Log":       rf.raftLog.TailLog,
-        "CommitIdx": rf.commitIndex,
+        "Term":              rf.currentTerm,
+        "Success":           true,
+        "Log":               rf.raftLog.TailLog,
+        "CommitIdx":         rf.commitIndex,
+        "LastIncludedIndex": rf.raftLog.LastIncludedIndex,
     }
     rf.logRpc(args.LeaderId, rf.me, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
 }
@@ -183,13 +185,14 @@ func (rf *Raft) AppendEntriesTo(server int) {
     }
 
     detail := map[string]interface{}{
-        "Log":           rf.raftLog.TailLog,
-        "CommitIdx":     rf.commitIndex,
-        "MatchIndex":    rf.matchIndex,
-        "PrevLogIdx":    args.PrevLogIndex,
-        "PrevLogTerm":   args.PrevLogTerm,
-        "PeerNextIndex": rf.nextIndex[server],
-        "NextIndex":     rf.nextIndex,
+        "Log":               rf.raftLog.TailLog,
+        "CommitIdx":         rf.commitIndex,
+        "MatchIndex":        rf.matchIndex,
+        "PrevLogIdx":        args.PrevLogIndex,
+        "PrevLogTerm":       args.PrevLogTerm,
+        "PeerNextIndex":     rf.nextIndex[server],
+        "NextIndex":         rf.nextIndex,
+        "LastIncludedIndex": rf.raftLog.LastIncludedIndex,
     }
 
     if rf.nextIndex[server] <= rf.raftLog.GetActualLastIndex() {

@@ -63,7 +63,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
     newLog = append(newLog, LogEntry{rf.raftLog.LastIncludedTerm, 0, true})
     newLog = append(newLog, rf.raftLog.GetEntries(index+1, rf.raftLog.GetActualLastIndex())...)
 
-    rf.logger.Printf("%v\n", newLog)
     rf.raftLog.LastIncludedIndex = index
     rf.raftLog.Snapshot = snapshot
 
@@ -71,7 +70,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
     rf.persist()
 
     rf.pendingSnapshot = true
-    rf.applyCond.Signal()
 }
 
 type InstallSnapshotArgs struct {
@@ -114,6 +112,7 @@ func (rf *Raft) InstallSnapshotOn(server int) {
     detail := map[string]interface{}{
         "LastIncludedIndex": args.LastIncludedIndex,
         "LastIncludedTerm":  args.LastIncludedTerm,
+        "Log":               rf.raftLog.TailLog,
     }
 
     rf.logRpc(rf.me, server, "INSTALL_SNAPSHOT ASRGS", rf.currentTerm, args.RpcId, detail)

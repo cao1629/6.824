@@ -1525,6 +1525,38 @@ func mysnapcommon(t *testing.T, name string, disconnect bool, reliable bool, cra
     cfg.end()
 }
 
+func mysnapcommon1(t *testing.T, name string, disconnect bool, reliable bool, crash bool) {
+    iters := 30
+    servers := 3
+    cfg := make_config(t, servers, !reliable, true)
+    nums := 0
+    defer cfg.cleanup()
+
+    cfg.begin(name)
+
+    nums++
+    cfg.one(1000+nums, servers, true)
+    leader1 := cfg.checkOneLeader()
+
+    for i := 1; i < iters; i++ {
+
+        // 0 ~ 19
+        for i := 0; i < 20; i++ {
+            nums++
+            cfg.rafts[leader1].Start(nums)
+        }
+
+        nums++
+        cfg.one(1000+nums, servers, true)
+
+        if cfg.LogSize() >= MAXLOGSIZE {
+            cfg.t.Fatalf("Log size too large")
+        }
+
+    }
+    cfg.end()
+}
+
 func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash bool) {
     iters := 30
     servers := 3
@@ -1536,7 +1568,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
     cfg.one(rand.Int(), servers, true)
     leader1 := cfg.checkOneLeader()
 
-    for i := 0; i < iters; i++ {
+    for i := 1; i < iters; i++ {
         victim := (leader1 + 1) % servers
         sender := leader1
         if i%3 == 1 {
@@ -1554,8 +1586,11 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
         }
 
         // perhaps send enough to get a Snapshot
-        nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
-        for i := 0; i < nn; i++ {
+        nn := 20
+        //nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
+
+        // 0 ~ 19
+        for i := 100; i < 100+nn; i++ {
             // cfg.rafts[sender].Start(rand.Int())
             cfg.rafts[sender].Start(i)
         }
@@ -1566,6 +1601,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
             // an InstallSnapshot RPC isn't required for
             // TestSnapshotBasic2D().
             // cfg.one(rand.Int(), servers, true)
+
             cfg.one(rand.Int(), servers, false)
         } else {
             cfg.one(rand.Int(), servers-1, true)
@@ -1592,7 +1628,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 }
 
 func TestSnapshotBasic2D(t *testing.T) {
-    snapcommon(t, "Test (2D): snapshots basic", false, true, false)
+    mysnapcommon1(t, "Test (2D): snapshots basic", false, true, false)
 }
 
 func TestSnapshotInstall2D(t *testing.T) {

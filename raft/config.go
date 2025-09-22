@@ -252,14 +252,14 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
         err_msg := ""
         if m.SnapshotValid {
             //
-            rf.logger.Println("applier-snap")
             if rf.CondInstallSnapshot(m.SnapshotTerm, m.SnapshotIndex, m.Snapshot) {
                 cfg.mu.Lock()
                 err_msg = cfg.ingestSnap(i, m.Snapshot, m.SnapshotIndex)
+                rf.logger.Printf("applier-snap ingest snapshot at %v, cfg.logs = %v\n", m.SnapshotIndex, cfg.logs[i])
                 cfg.mu.Unlock()
             }
         } else if m.CommandValid {
-            cfg.rafts[i].logger.Printf("applier n.CommandIndex = %v,  cfg.lastApplied[i]+1 = %v", m.CommandIndex, cfg.lastApplied[i]+1)
+            rf.logger.Printf("applier n.CommandIndex = %v,  cfg.lastApplied[i]+1 = %v", m.CommandIndex, cfg.lastApplied[i]+1)
             if m.CommandIndex != cfg.lastApplied[i]+1 {
                 err_msg = fmt.Sprintf("server %v apply out of order, expected index %v, got %v", i, cfg.lastApplied[i]+1, m.CommandIndex)
             }
@@ -268,6 +268,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
                 cfg.mu.Lock()
                 var prevok bool
                 err_msg, prevok = cfg.checkLogs(i, m)
+                rf.logger.Printf("%v\n", cfg.logs[i])
                 cfg.mu.Unlock()
                 if m.CommandIndex > 1 && prevok == false {
                     err_msg = fmt.Sprintf("server %v apply out of order %v", i, m.CommandIndex)
@@ -279,6 +280,8 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
             cfg.mu.Unlock()
 
             if (m.CommandIndex+1)%SnapShotInterval == 0 {
+
+                // snapsho index + cfg.logs -> []byte
                 w := new(bytes.Buffer)
                 e := labgob.NewEncoder(w)
                 e.Encode(m.CommandIndex)
@@ -532,6 +535,7 @@ func (cfg *config) checkNoLeader() {
 // return value 1: how many servers have committed this index?
 // return value 2: the command committed, if any
 func (cfg *config) nCommitted(index int) (int, interface{}) {
+    fmt.Printf("nCommitted: index = %d logs = %v\n", index, cfg.logs)
     count := 0
     var cmd interface{} = nil
 
@@ -541,7 +545,9 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
         }
 
         cfg.mu.Lock()
+
         cmd1, ok := cfg.logs[i][index]
+        fmt.Printf("cmd = %v, ok = %v, index = %d, logs[%d] = %v\n", cmd, ok, index, i, cfg.logs[i])
         cfg.mu.Unlock()
 
         if ok {
@@ -646,6 +652,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
             // if reply is true, submit the command multiple times
             for time.Since(t1).Seconds() < 2 {
                 nd, cmd1 := cfg.nCommitted(index)
+                fmt.Printf("%d\n", nd)
                 // reached an agreement
                 if nd > 0 && nd >= expectedServers {
                     // committed
@@ -660,6 +667,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
             }
 
             if retry == false {
+                //fmt.Printf("%v\n", cfg.logs)
                 cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
             }
 

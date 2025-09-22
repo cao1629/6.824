@@ -190,6 +190,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
     rf.applyCh = applyCh
     rf.applyCond = sync.NewCond(&rf.mu)
+    rf.pendingSnapshot = false
 
     rf.lastTimeReceivedHeartbeat = time.Now()
 

@@ -34,37 +34,35 @@ func (rf *Raft) runApply() {
     for {
         rf.mu.Lock()
         rf.applyCond.Wait()
-        var msgs []ApplyMsg
 
-        if rf.pendingSnapshot {
-            snapshotMsg := ApplyMsg{
-                SnapshotValid: true,
-                Snapshot:      rf.raftLog.Snapshot,
-                SnapshotTerm:  rf.raftLog.LastIncludedTerm,
-                SnapshotIndex: rf.raftLog.LastIncludedIndex,
-            }
-            rf.pendingSnapshot = false
-            rf.mu.Unlock()
-
-            rf.applyCh <- snapshotMsg
-        } else {
-            for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
-                msgs = append(msgs, ApplyMsg{
-                    CommandValid: true,
-                    Command:      rf.raftLog.GetCommandAt(i),
-                    CommandIndex: i,
-                })
-            }
-
-            rf.mu.Unlock()
-
-            for _, msg := range msgs {
+        for {
+            if rf.pendingSnapshot && rf.lastApplied == rf.raftLog.LastIncludedIndex {
+                msg := ApplyMsg{
+                    SnapshotValid: true,
+                    Snapshot:      rf.raftLog.Snapshot,
+                    SnapshotTerm:  rf.raftLog.LastIncludedTerm,
+                    SnapshotIndex: rf.raftLog.LastIncludedIndex,
+                }
+                rf.pendingSnapshot = false
+                rf.mu.Unlock()
                 rf.applyCh <- msg
+                rf.mu.Lock()
+            } else if rf.lastApplied < rf.commitIndex {
+                msg := ApplyMsg{
+                    CommandValid: true,
+                    Command:      rf.raftLog.GetCommandAt(rf.lastApplied + 1),
+                    CommandIndex: rf.lastApplied + 1,
+                }
+                rf.mu.Unlock()
+                rf.applyCh <- msg
+                rf.mu.Lock()
+                rf.lastApplied++
+            } else {
+                break
             }
-            // what if interrupted here?
-            rf.mu.Lock()
-            rf.lastApplied = rf.commitIndex
-            rf.mu.Unlock()
         }
+
+        rf.mu.Unlock()
     }
+
 }
