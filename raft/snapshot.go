@@ -1,26 +1,5 @@
 package raft
 
-// Save both Raft state and K/V Snapshot as a single atomic action,
-// to help avoid them getting out of sync.
-func (ps *Persister) SaveStateAndSnapshot(state []byte, snapshot []byte) {
-    ps.mu.Lock()
-    defer ps.mu.Unlock()
-    ps.raftstate = clone(state)
-    ps.snapshot = clone(snapshot)
-}
-
-func (ps *Persister) ReadSnapshot() []byte {
-    ps.mu.Lock()
-    defer ps.mu.Unlock()
-    return clone(ps.snapshot)
-}
-
-func (ps *Persister) SnapshotSize() int {
-    ps.mu.Lock()
-    defer ps.mu.Unlock()
-    return len(ps.snapshot)
-}
-
 //
 // A service wants to switch to Snapshot.  Only do so if Raft hasn't
 // have more recent info since it communicate the Snapshot on applyCh.
@@ -37,10 +16,8 @@ func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int,
 // service no longer needs the log through (and including)
 // that index. Raft should now trim its log as much as possible.
 // 
-// "index"
-// if "index" > "commitIndex": try to Snapshot an index that is not committed yet.
-// if "index" > "lastApplied": we haven't applied this index, so we do not know the state up to "index". We should apply it first.
-// if "index"  <= "LastIncludedIndex": we try to Snapshot an index that has aleady been snapshotted.
+// case 1: this Snapshot() call is invoked by InstallSnapshot RPC.
+// case 2: this Snaphshot() call is passed from the app layer.
 //
 // "Snapshot": the Snapshot up to "index". Opaque to raft. Provided by the service. (raft, kv service)
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
@@ -48,28 +25,30 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 
     rf.mu.Lock()
     rf.logger.Printf("snapshot at index %d, log = %v\n", index, rf.raftLog.TailLog)
-    defer func() {
-        rf.mu.Unlock()
-    }()
 
     if index > rf.commitIndex || index <= rf.raftLog.LastIncludedIndex {
+        rf.logger.Printf("XXXXXXXXXXXXX")
         return
     }
 
     rf.raftLog.LastIncludedTerm = rf.raftLog.GetTermAt(index)
 
     // Trim the existing log
+    // actual last index - index = numbers of entries to keep
+    // +1: dummy head
     newLog := make([]LogEntry, 0, rf.raftLog.GetActualLastIndex()-index+1)
     newLog = append(newLog, LogEntry{rf.raftLog.LastIncludedTerm, 0, true})
     newLog = append(newLog, rf.raftLog.GetEntries(index+1, rf.raftLog.GetActualLastIndex())...)
 
     rf.raftLog.LastIncludedIndex = index
     rf.raftLog.Snapshot = snapshot
-
     rf.raftLog.TailLog = newLog
-    rf.persist()
 
+    rf.persist()
     rf.pendingSnapshot = true
+    rf.mu.Unlock()
+    rf.applyCond.Signal()
+
 }
 
 type InstallSnapshotArgs struct {
@@ -115,14 +94,19 @@ func (rf *Raft) InstallSnapshotOn(server int) {
         "Log":               rf.raftLog.TailLog,
     }
 
-    rf.logRpc(rf.me, server, "INSTALL_SNAPSHOT ASRGS", rf.currentTerm, args.RpcId, detail)
+    rf.logRpc(rf.me, server, "INSTALL_SNAPSHOT ARGS", rf.currentTerm, args.RpcId, detail)
 
     rf.mu.Unlock()
     reply := &InstallSnapshotReply{}
 
-    ok := rf.sendInstallSnapshot(server, &args, reply)
+    if ok := rf.sendInstallSnapshot(server, &args, reply); !ok {
+        detail = map[string]interface{}{
+            "Success": false,
+            "Reason":  "Timeout",
+        }
 
-    if !ok {
+        rf.logRpc(rf.me, server, "INSTALL_SNAPSHOT REPLY", rf.currentTerm, args.RpcId, detail)
+
         return
     }
 
@@ -130,11 +114,26 @@ func (rf *Raft) InstallSnapshotOn(server int) {
     defer rf.mu.Unlock()
 
     if didUpdateTerm := rf.mayUpdateTerm(reply.Term); didUpdateTerm {
+        detail = map[string]interface{}{
+            "Term":   reply.Term,
+            "Reason": "Update current term",
+        }
+        rf.logRpc(rf.me, server, "INSTALL_SNAPSHOT REPLY", rf.currentTerm, args.RpcId, detail)
         return
     }
 
     rf.nextIndex[server] = rf.raftLog.LastIncludedIndex + 1
     rf.matchIndex[server] = rf.raftLog.LastIncludedIndex
+
+    // We just updated matchIndex for server. Maybe we can update commitIndex.
+    newCommitIndex := rf.findCommitIndex()
+
+    // it is possible that newCommitIndex = rf.commitIndex
+    if newCommitIndex > rf.commitIndex {
+        rf.logCommitIndexUpdate(rf.commitIndex, newCommitIndex)
+        rf.commitIndex = newCommitIndex
+        rf.applyCond.Signal()
+    }
 
     detail = map[string]interface{}{
         "NextIndex":  rf.nextIndex[server],
@@ -156,16 +155,31 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
     reply.Term = rf.currentTerm
 
     if rf.currentTerm > args.Term {
+        rf.mu.Unlock()
         return
     }
 
     if didUpdateTerm := rf.mayUpdateTerm(args.Term); didUpdateTerm {
-        //
+
+    }
+
+    rf.raftLog.Snapshot = clone(args.Snapshot)
+    rf.pendingSnapshot = true
+
+    if args.LastIncludedIndex > rf.commitIndex {
+        rf.commitIndex = args.LastIncludedIndex
+        rf.raftLog.LastIncludedIndex = args.LastIncludedIndex
+        rf.raftLog.SetTermAtZero(args.LastIncludedTerm)
+
+        // Remove all logs coming before LastIncludedIndex
+        newTailLog := append(rf.raftLog.TailLog[:1])
+        rf.raftLog.TailLog = newTailLog
+
+        rf.applyCond.Signal()
     }
 
     rf.logRpc(args.LeaderId, rf.me, "INSTALL_SNAPSHOT REPLY", rf.currentTerm, args.RpcId, map[string]interface{}{})
 
     rf.mu.Unlock()
 
-    rf.Snapshot(args.LastIncludedIndex, args.Snapshot)
 }

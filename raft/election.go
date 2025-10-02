@@ -275,6 +275,11 @@ func (rf *Raft) RequestVoteFrom(peer int) bool {
     //rf.logLockUnlock(false)
 
     if ok := rf.sendRequestVote(peer, &args, &reply); !ok {
+        detail = map[string]interface{}{
+            "Reason":  "Unreliable network",
+            "Success": "Timeout",
+        }
+        rf.logRpc(rf.me, peer, "REQUEST_VOTE REPLY", rf.currentTerm, args.RpcId, detail)
         return false
     }
 

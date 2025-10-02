@@ -211,6 +211,8 @@ func (cfg *config) applier(i int, applyCh chan ApplyMsg) {
 }
 
 // returns "" or error string
+// [1] Given a snapshot message, apply it to cfg.logs
+// [2] Given a snapshot from persister, apply it to cfg.logs. In this case, index is -1
 func (cfg *config) ingestSnap(i int, snapshot []byte, index int) string {
     if snapshot == nil {
         log.Fatalf("nil Snapshot")
@@ -220,6 +222,7 @@ func (cfg *config) ingestSnap(i int, snapshot []byte, index int) string {
     d := labgob.NewDecoder(r)
     var lastIncludedIndex int
     var xlog []interface{}
+    log.Printf("ingestSnap: index = %d, len of snapshot = %v\n", index, len(snapshot))
     if d.Decode(&lastIncludedIndex) != nil ||
         d.Decode(&xlog) != nil {
         log.Fatalf("Snapshot decode error")
@@ -251,7 +254,6 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
     for m := range applyCh {
         err_msg := ""
         if m.SnapshotValid {
-            //
             if rf.CondInstallSnapshot(m.SnapshotTerm, m.SnapshotIndex, m.Snapshot) {
                 cfg.mu.Lock()
                 err_msg = cfg.ingestSnap(i, m.Snapshot, m.SnapshotIndex)
@@ -281,7 +283,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 
             if (m.CommandIndex+1)%SnapShotInterval == 0 {
 
-                // snapsho index + cfg.logs -> []byte
+                // snapshot index + cfg.logs -> []byte
                 w := new(bytes.Buffer)
                 e := labgob.NewEncoder(w)
                 e.Encode(m.CommandIndex)
@@ -293,6 +295,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 
                 // in between snapshotting this index from the Command ApplyMsg and sending its Snapshot ApplyMsg
                 // to ApplyCh, no more Command ApplyMsg should be sent to ApplyCh.
+                log.Printf("applierSnap: index = %d, len of snapshot = %v\n", m.CommandIndex, w.Len())
                 rf.Snapshot(m.CommandIndex, w.Bytes())
             }
         } else {
@@ -346,6 +349,7 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
         if snapshot != nil && len(snapshot) > 0 {
             // mimic KV server and process Snapshot now.
             // ideally Raft should send it up on applyCh...
+            log.Printf("start1: len of snapshot = %v, index = -1\n", len(snapshot))
             err := cfg.ingestSnap(i, snapshot, -1)
             if err != "" {
                 cfg.t.Fatal(err)
@@ -535,7 +539,7 @@ func (cfg *config) checkNoLeader() {
 // return value 1: how many servers have committed this index?
 // return value 2: the command committed, if any
 func (cfg *config) nCommitted(index int) (int, interface{}) {
-    fmt.Printf("nCommitted: index = %d logs = %v\n", index, cfg.logs)
+    //fmt.Printf("nCommitted: index = %d logs = %v\n", index, cfg.logs)
     count := 0
     var cmd interface{} = nil
 
@@ -547,7 +551,7 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
         cfg.mu.Lock()
 
         cmd1, ok := cfg.logs[i][index]
-        fmt.Printf("cmd = %v, ok = %v, index = %d, logs[%d] = %v\n", cmd, ok, index, i, cfg.logs[i])
+        fmt.Printf("cmd = %v, cmd1 = %v, ok = %v, index = %d, logs[%d] = %v\n", cmd, cmd1, ok, index, i, cfg.logs[i])
         cfg.mu.Unlock()
 
         if ok {

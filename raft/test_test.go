@@ -1550,15 +1550,281 @@ func mysnapcommon1(t *testing.T, name string, disconnect bool, reliable bool, cr
         cfg.one(1000+nums, servers, true)
 
         if cfg.LogSize() >= MAXLOGSIZE {
+            cfg.t.Logf("Log Size = %d\n", cfg.LogSize())
             cfg.t.Fatalf("Log size too large")
         }
 
     }
+
+    //// 0 ~ 19
+    //for i := 0; i < 20; i++ {
+    //    nums++
+    //    cfg.rafts[leader1].Start(nums)
+    //}
+    //
+    //nums++
+    //cfg.one(1000+nums, servers, true)
+    //
+    //if cfg.LogSize() >= MAXLOGSIZE {
+    //    cfg.t.Fatalf("Log size too large")
+    //}
     cfg.end()
 }
 
-func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash bool) {
+func mysnapcommon2(t *testing.T, name string, disconnect bool, reliable bool, crash bool) {
     iters := 30
+    servers := 3
+    cfg := make_config(t, servers, !reliable, true)
+    defer cfg.cleanup()
+
+    cfg.begin(name)
+
+    cfg.one(1000, servers, true)
+    leader1 := cfg.checkOneLeader()
+    nums := 1
+
+    for i := 1; i < iters; i++ {
+        sender := leader1
+
+        //if disconnect {
+        //    cfg.disconnect(victim)
+        //    cfg.one(rand.Int(), servers-1, true)
+        //}
+        //if crash {
+        //    cfg.crash1(victim)
+        //    cfg.one(rand.Int(), servers-1, true)
+        //}
+
+        // perhaps send enough to get a Snapshot
+
+        // 0 ~ 19
+        for i := 0; i < 20; i++ {
+            cfg.rafts[sender].Start(nums)
+            nums++
+        }
+
+        // let applier threads catch up with the Start()'s
+        if disconnect == false && crash == false {
+            // make sure all followers have caught up, so that
+            // an InstallSnapshot RPC isn't required for
+            // TestSnapshotBasic2D().
+            // cfg.one(rand.Int(), servers, true)
+
+            cfg.one(2000, servers, false)
+        } else {
+            cfg.one(rand.Int(), servers-1, true)
+        }
+
+        if cfg.LogSize() >= MAXLOGSIZE {
+            cfg.t.Fatalf("Log size too large")
+        }
+        //if disconnect {
+        //    // reconnect a follower, who maybe behind and
+        //    // needs to rceive a Snapshot to catch up.
+        //    cfg.connect(victim)
+        //    cfg.one(rand.Int(), servers, true)
+        //    leader1 = cfg.checkOneLeader()
+        //}
+        //if crash {
+        //    cfg.start1(victim, cfg.applierSnap)
+        //    cfg.connect(victim)
+        //    cfg.one(rand.Int(), servers, true)
+        //    leader1 = cfg.checkOneLeader()
+        //}
+    }
+    cfg.end()
+}
+
+func mysnapcommon3(t *testing.T, name string, disconnect bool, reliable bool, crash bool) {
+    //iters := 30
+    servers := 3
+    cfg := make_config(t, servers, !reliable, true)
+    defer cfg.cleanup()
+
+    a := 1000
+    b := 1
+    cfg.begin(name)
+
+    cfg.one(a, servers, true)
+    a++
+    leader1 := cfg.checkOneLeader()
+
+    victim := (leader1 + 1) % servers
+    sender := leader1
+    //if i%3 == 1 {
+    //    sender = (leader1 + 1) % servers
+    //    victim = leader1
+    //}
+
+    if disconnect {
+        cfg.disconnect(victim)
+        cfg.one(a, servers-1, true)
+        a++
+    }
+
+    // 0 ~ 19
+    for i := 0; i < 20; i++ {
+        // cfg.rafts[sender].Start(rand.Int())
+        cfg.rafts[sender].Start(b)
+        b++
+    }
+
+    cfg.one(a, servers-1, true)
+    a++
+
+    if cfg.LogSize() >= MAXLOGSIZE {
+        cfg.t.Fatalf("Log size too large")
+    }
+
+    cfg.connect(victim)
+    cfg.one(a, servers, true)
+    a++
+    leader1 = cfg.checkOneLeader()
+
+    cfg.end()
+}
+
+// TestSnapshotInstallUnreliable2D
+func mysnapcommon4(t *testing.T, name string, disconnect bool, reliable bool, crash bool) {
+    iters := 30
+    servers := 3
+    cfg := make_config(t, servers, !reliable, true)
+    defer cfg.cleanup()
+
+    cfg.begin(name)
+
+    a := 1000
+    b := 1
+
+    cfg.one(a, servers, true)
+    a++
+    leader1 := cfg.checkOneLeader()
+
+    for i := 1; i < iters; i++ {
+        victim := (leader1 + 1) % servers
+        sender := leader1
+        if i%3 == 1 {
+            sender = (leader1 + 1) % servers
+            victim = leader1
+        }
+
+        if disconnect {
+            cfg.disconnect(victim)
+            cfg.one(a, servers-1, true)
+            a++
+        }
+
+        // 0 ~ 19
+        for m := 0; m < 20; m++ {
+            cfg.rafts[sender].Start(b)
+            b++
+        }
+
+        cfg.one(a, servers-1, true)
+        a++
+
+        if cfg.LogSize() >= MAXLOGSIZE {
+            cfg.t.Fatalf("Log size too large")
+        }
+        if disconnect {
+            // reconnect a follower, who maybe behind and
+            // needs to rceive a Snapshot to catch up.
+            cfg.connect(victim)
+            cfg.one(a, servers, true)
+            a++
+            leader1 = cfg.checkOneLeader()
+        }
+    }
+    cfg.end()
+}
+
+// TestSnapshotInstallCrash2D
+func mysnapcommon5(t *testing.T, name string, disconnect bool, reliable bool, crash bool) {
+    iters := 30
+    servers := 3
+    cfg := make_config(t, servers, !reliable, true)
+    defer cfg.cleanup()
+    a := 1000
+    b := 1
+    cfg.begin(name)
+
+    cfg.one(a, servers, true)
+    a++
+    leader1 := cfg.checkOneLeader()
+
+    for i := 1; i < iters; i++ {
+        victim := (leader1 + 1) % servers
+        sender := leader1
+        if i%3 == 1 {
+            sender = (leader1 + 1) % servers
+            victim = leader1
+        }
+
+        if crash {
+            cfg.crash1(victim)
+            cfg.one(b, servers-1, true)
+            b++
+        }
+
+        // 0 ~ 19
+        for m := 0; m < 20; m++ {
+            cfg.rafts[sender].Start(b)
+            b++
+        }
+
+        cfg.one(a, servers-1, true)
+        a++
+
+        if cfg.LogSize() >= MAXLOGSIZE {
+            cfg.t.Fatalf("Log size too large")
+        }
+
+        if crash {
+            cfg.start1(victim, cfg.applierSnap)
+            cfg.connect(victim)
+            cfg.one(a, servers, true)
+            a++
+            leader1 = cfg.checkOneLeader()
+        }
+    }
+
+    //victim := (leader1 + 1) % servers
+    //sender := leader1
+    //
+    //sender = (leader1 + 1) % servers
+    //victim = leader1
+    //
+    //if crash {
+    //    cfg.crash1(victim)
+    //    cfg.one(b, servers-1, true)
+    //    b++
+    //}
+    //
+    //// 0 ~ 19
+    //for m := 0; m < 20; m++ {
+    //    cfg.rafts[sender].Start(b)
+    //    b++
+    //}
+    //
+    //cfg.one(a, servers-1, true)
+    //a++
+    //
+    //if cfg.LogSize() >= MAXLOGSIZE {
+    //    cfg.t.Fatalf("Log size too large")
+    //}
+    //
+    //if crash {
+    //    cfg.start1(victim, cfg.applierSnap)
+    //    cfg.connect(victim)
+    //    cfg.one(a, servers, true)
+    //    a++
+    //    leader1 = cfg.checkOneLeader()
+    //}
+    //cfg.end()
+}
+
+func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash bool) {
+    iters := 10
     servers := 3
     cfg := make_config(t, servers, !reliable, true)
     defer cfg.cleanup()
@@ -1628,7 +1894,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 }
 
 func TestSnapshotBasic2D(t *testing.T) {
-    mysnapcommon1(t, "Test (2D): snapshots basic", false, true, false)
+    snapcommon(t, "Test (2D): snapshots basic", false, true, false)
 }
 
 func TestSnapshotInstall2D(t *testing.T) {

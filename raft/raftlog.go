@@ -26,6 +26,9 @@ func NewRaftLog() *RaftLog {
 // not thread-safe
 // [from: until]  inclusive range
 func (rl *RaftLog) GetEntries(from, until int) []LogEntry {
+    if until < from {
+        return []LogEntry{}
+    }
     logLen := until - from + 1
     entries := make([]LogEntry, logLen)
     copy(entries, rl.TailLog[from-rl.LastIncludedIndex:until-rl.LastIncludedIndex+1])

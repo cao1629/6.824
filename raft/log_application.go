@@ -35,34 +35,37 @@ func (rf *Raft) runApply() {
         rf.mu.Lock()
         rf.applyCond.Wait()
 
-        for {
-            if rf.pendingSnapshot && rf.lastApplied == rf.raftLog.LastIncludedIndex {
-                msg := ApplyMsg{
-                    SnapshotValid: true,
-                    Snapshot:      rf.raftLog.Snapshot,
-                    SnapshotTerm:  rf.raftLog.LastIncludedTerm,
-                    SnapshotIndex: rf.raftLog.LastIncludedIndex,
-                }
-                rf.pendingSnapshot = false
-                rf.mu.Unlock()
-                rf.applyCh <- msg
-                rf.mu.Lock()
-            } else if rf.lastApplied < rf.commitIndex {
-                msg := ApplyMsg{
-                    CommandValid: true,
-                    Command:      rf.raftLog.GetCommandAt(rf.lastApplied + 1),
-                    CommandIndex: rf.lastApplied + 1,
-                }
-                rf.mu.Unlock()
-                rf.applyCh <- msg
-                rf.mu.Lock()
-                rf.lastApplied++
-            } else {
-                break
+        if rf.pendingSnapshot {
+            snapMsg := ApplyMsg{
+                SnapshotValid: true,
+                Snapshot:      clone(rf.raftLog.Snapshot),
+                SnapshotTerm:  rf.raftLog.LastIncludedTerm,
+                SnapshotIndex: rf.raftLog.LastIncludedIndex,
             }
+            rf.mu.Unlock()
+            rf.logger.Printf("Send Snapshot Message %v\n", snapMsg)
+            rf.applyCh <- snapMsg
+            rf.mu.Lock()
+            rf.pendingSnapshot = false
+            rf.lastApplied = rf.raftLog.LastIncludedIndex
+            rf.logger.Printf("rf.lastApplied = rf.raftLog.LastIncludedIndex %d\n", rf.lastApplied)
+        } else {
+            msgs := make([]ApplyMsg, 0)
+            for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
+                msgs = append(msgs, ApplyMsg{
+                    CommandValid: true,
+                    Command:      rf.raftLog.GetCommandAt(i),
+                    CommandIndex: i,
+                })
+            }
+            rf.mu.Unlock()
+            for _, msg := range msgs {
+                rf.applyCh <- msg
+            }
+            rf.mu.Lock()
+            rf.lastApplied = rf.commitIndex
         }
-
         rf.mu.Unlock()
-    }
 
+    }
 }

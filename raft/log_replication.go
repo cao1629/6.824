@@ -122,6 +122,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
         rf.applyCond.Signal()
     }
 
+    // After snapshot, lastApplied might be smaller than commitIndex.
+    if rf.commitIndex > rf.lastApplied {
+        rf.applyCond.Signal()
+    }
+
     // Success
     reply.Success = true
     detail = map[string]interface{}{
@@ -159,6 +164,15 @@ func (rf *Raft) AppendEntriesTo(server int) {
     }
     expectedTerm := rf.currentTerm
 
+    // invariant: nextIndex[server] > lastIncludedIndex
+    // when nextIndex[server] == 1, lastIncludedIndex must be 0, which means no snapshot done on my log.
+    // In this case, no need to call InstallSnapshotOn.
+    if rf.nextIndex[server] > 1 && rf.nextIndex[server] <= rf.raftLog.LastIncludedIndex {
+        go rf.InstallSnapshotOn(server)
+        rf.mu.Unlock()
+        return
+    }
+
     // when I'm finished replicating log entries to a follower,
     // the nextIndex for that follower might be 1 + my log length.
     // In this case, I won't send any entries in the next AppendEntriesTo call.
@@ -170,14 +184,6 @@ func (rf *Raft) AppendEntriesTo(server int) {
         PrevLogTerm:  rf.raftLog.GetPrevTerm(rf.nextIndex[server]),
         LeaderCommit: rf.commitIndex,
         RpcId:        rpcId.Add(1),
-    }
-
-    // If my log has never been snapshotted before, then lastIncludedIndex = 0
-    if rf.nextIndex[server] > 1 && rf.nextIndex[server]-1 == rf.raftLog.LastIncludedIndex {
-        go rf.InstallSnapshotOn(server)
-        rf.mu.Unlock()
-        //rf.logLockUnlock(false, "AppendEntriesTo")
-        return
     }
 
     if rf.nextIndex[server] <= rf.raftLog.GetActualLastIndex() {
@@ -209,6 +215,12 @@ func (rf *Raft) AppendEntriesTo(server int) {
     // When messages get lost or the server is down, labrpc will stimulate a timeout and return a false reply.
     // We just ignore the reply.
     if ok := rf.sendAppendEntries(server, &args, &reply); !ok {
+        detail = map[string]interface{}{
+            "Success": false,
+            "Reason":  "Timeout",
+        }
+
+        rf.logRpc(rf.me, server, "APPEND_ENTRIES REPLY", rf.currentTerm, args.RpcId, detail)
         return
     }
 
@@ -283,7 +295,7 @@ func (rf *Raft) AppendEntriesTo(server int) {
     newCommitIndex := rf.findCommitIndex()
 
     // it is possible that newCommitIndex = rf.commitIndex
-    if newCommitIndex > rf.commitIndex {
+    if rf.commitIndex > rf.lastApplied || newCommitIndex > rf.commitIndex {
         rf.logCommitIndexUpdate(rf.commitIndex, newCommitIndex)
         rf.commitIndex = newCommitIndex
         rf.applyCond.Signal()

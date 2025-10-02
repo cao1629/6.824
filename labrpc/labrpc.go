@@ -124,9 +124,9 @@ type Network struct {
     reliable       bool
     longDelays     bool                        // pause a long time on send on disabled connection
     longReordering bool                        // sometimes delay replies a long time
-    ends           map[interface{}]*ClientEnd  // ends, by name
-    enabled        map[interface{}]bool        // by end name
-    servers        map[interface{}]*Server     // servers, by name
+    ends           map[interface{}]*ClientEnd  // endname -> ClientEnd
+    enabled        map[interface{}]bool        // endname -> bool
+    servers        map[interface{}]*Server     // servername -> Server
     connections    map[interface{}]interface{} // endname -> servername
     endCh          chan reqMsg
     done           chan struct{} // closed when Network is cleaned up
@@ -236,6 +236,7 @@ func (rn *Network) processReq(req reqMsg) {
         // if the network is unreliable, then 1/10 chance of dropping the request and return timeout.
         if reliable == false && (rand.Int()%1000) < 100 {
             // drop the request, return as if timeout
+            // if so, reply is a byte array with all zero
             req.replyCh <- replyMsg{false, nil}
             return
         }
@@ -271,6 +272,7 @@ func (rn *Network) processReq(req reqMsg) {
                 serverDead = rn.isServerDead(req.endname, servername, server)
                 if serverDead {
                     go func() {
+                        // we need to drain ech.
                         <-ech
                     }()
                 }
@@ -378,6 +380,7 @@ func (rn *Network) Connect(endname interface{}, servername interface{}) {
 // enable/disable a ClientEnd.
 // What happens when a ClientEnd is disabled?
 // If a ClientEnd is disabled, then IsServerDead() will return true
+//
 func (rn *Network) Enable(endname interface{}, enabled bool) {
     rn.mu.Lock()
     defer rn.mu.Unlock()
