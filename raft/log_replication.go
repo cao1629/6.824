@@ -157,26 +157,29 @@ func (rf *Raft) AppendEntriesTo(server int) {
     rf.mu.Lock()
     //rf.logLockUnlock(true, "AppendEntriesTo")
 
+    // How come I find myself not a leader here?
+    // between AppendEntriesToPeer and AppendEntriesTo, outside of critical section
+    // If I learn a higher term from other servers, I become a follower
     if rf.state != Leader {
         rf.mu.Unlock()
         //rf.logLockUnlock(false, "AppendEntriesTo")
         return
     }
+
     expectedTerm := rf.currentTerm
 
     // invariant: nextIndex[server] > lastIncludedIndex
-    // when nextIndex[server] == 1, lastIncludedIndex must be 0, which means no snapshot done on my log.
-    // In this case, no need to call InstallSnapshotOn.
-    if rf.nextIndex[server] > 1 && rf.nextIndex[server] <= rf.raftLog.LastIncludedIndex {
+    // so when we see nextIndex[server] <= lastIncludedIndex, we need to send InstallSnapshot RPC.
+    // For simplicity, we will discard all the log entries after lastIncludedIndex on the peer side.
+    if rf.nextIndex[server] <= rf.raftLog.LastIncludedIndex {
+
+        // Is it possible that between here and InstallSnapshotOn, states changed?
+        // e.g. Sent another AppendEntriesTo, and then InstallSnapshotOn with the same parameters
         go rf.InstallSnapshotOn(server)
         rf.mu.Unlock()
         return
     }
 
-    // when I'm finished replicating log entries to a follower,
-    // the nextIndex for that follower might be 1 + my log length.
-    // In this case, I won't send any entries in the next AppendEntriesTo call.
-    //
     args := AppendEntriesArgs{
         Term:         rf.currentTerm,
         LeaderId:     rf.me,
@@ -191,6 +194,7 @@ func (rf *Raft) AppendEntriesTo(server int) {
     }
 
     detail := map[string]interface{}{
+        "TailLogLen":        len(rf.raftLog.TailLog),
         "Log":               rf.raftLog.TailLog,
         "CommitIdx":         rf.commitIndex,
         "MatchIndex":        rf.matchIndex,

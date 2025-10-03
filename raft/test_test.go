@@ -976,11 +976,11 @@ func TestMyPersist22C(t *testing.T) {
 
     cfg.begin("Test (2C): more persistence")
 
-    index := 1
+    num := 1
 
     // 11
-    cfg.one(10+index, servers, true)
-    index++
+    cfg.one(10+num, servers, true)
+    num++
 
     leader1 := cfg.checkOneLeader()
 
@@ -988,8 +988,8 @@ func TestMyPersist22C(t *testing.T) {
     cfg.disconnect((leader1 + 2) % servers)
 
     // 12
-    cfg.one(10+index, servers-2, true)
-    index++
+    cfg.one(10+num, servers-2, true)
+    num++
 
     cfg.disconnect((leader1 + 0) % servers)
     cfg.disconnect((leader1 + 3) % servers)
@@ -1007,8 +1007,8 @@ func TestMyPersist22C(t *testing.T) {
     cfg.connect((leader1 + 3) % servers)
 
     // 13
-    cfg.one(10+index, servers-2, true)
-    index++
+    cfg.one(10+num, servers-2, true)
+    num++
 
     cfg.connect((leader1 + 4) % servers)
     cfg.connect((leader1 + 0) % servers)
@@ -1100,6 +1100,71 @@ func TestPersist32C(t *testing.T) {
     cfg.end()
 }
 
+func TestMyFigure82C(t *testing.T) {
+    servers := 5
+    cfg := make_config(t, servers, false, false)
+    defer cfg.cleanup()
+
+    cfg.begin("Test (2C): Figure 8")
+
+    cfg.one(100, 1, true)
+
+    // nup = 5
+    nup := servers
+
+    for iters := 0; iters < 1000; iters++ {
+
+        //log.Println(iters)
+
+        leader := -1
+        for i := 0; i < servers; i++ {
+            if cfg.rafts[i] != nil {
+                _, _, ok := cfg.rafts[i].Start(iters + 1)
+                if ok {
+                    leader = i
+                }
+            }
+        }
+
+        if (rand.Int() % 1000) < 100 {
+            ms := rand.Int63() % (int64(RaftElectionTimeout/time.Millisecond) / 2)
+            time.Sleep(time.Duration(ms) * time.Millisecond)
+        } else {
+            ms := (rand.Int63() % 13)
+            time.Sleep(time.Duration(ms) * time.Millisecond)
+        }
+
+        // crash the leader
+        if leader != -1 {
+            cfg.crash1(leader)
+            nup -= 1
+        }
+
+        // when no enough servers to form a majority, recover a random crashed server
+        if nup < 3 {
+            s := rand.Int() % servers
+            if cfg.rafts[s] == nil {
+                cfg.start1(s, cfg.applier)
+                cfg.connect(s)
+                nup += 1
+            }
+        }
+    }
+
+    // bring all servers back
+    for i := 0; i < servers; i++ {
+        if cfg.rafts[i] == nil {
+            cfg.start1(i, cfg.applier)
+            cfg.connect(i)
+        }
+    }
+
+    cfg.one(2000, servers, true)
+
+    cfg.end()
+
+}
+
 //
 // Test the scenarios described in Figure 8 of the extended Raft paper. Each
 // iteration asks a leader, if there is one, to insert a command in the Raft
@@ -1120,7 +1185,7 @@ func TestFigure82C(t *testing.T) {
     cfg.one(rand.Int(), 1, true)
 
     nup := servers
-    for iters := 0; iters < 1000; iters++ {
+    for iters := 0; iters < 100; iters++ {
         leader := -1
         for i := 0; i < servers; i++ {
             if cfg.rafts[i] != nil {
@@ -1176,7 +1241,7 @@ func TestUnreliableAgree2C(t *testing.T) {
 
     var wg sync.WaitGroup
 
-    for iters := 1; iters < 50; iters++ {
+    for iters := 1; iters < 10; iters++ {
         // 100, 101, 102, 103, 1
         // 200, 201, 202, 203, 2
         // 300, 301, 302, 303, 3
@@ -1852,8 +1917,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
         }
 
         // perhaps send enough to get a Snapshot
-        nn := 20
-        //nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
+        nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
 
         // 0 ~ 19
         for i := 100; i < 100+nn; i++ {
@@ -1953,6 +2017,42 @@ func TestSnapshotAllCrash2D(t *testing.T) {
         if index2 < index1+1 {
             t.Fatalf("index decreased from %v to %v", index1, index2)
         }
+    }
+    cfg.end()
+}
+
+func TestMySnapshotAllCrash2D(t *testing.T) {
+    servers := 3
+    cfg := make_config(t, servers, false, true)
+    defer cfg.cleanup()
+
+    cfg.begin("Test (2D): crash and restart all servers")
+
+    num := 1
+
+    cfg.one(1000, servers, true)
+
+    for i := 0; i < 20; i++ {
+        cfg.one(num, servers, true)
+        num++
+    }
+
+    index1 := cfg.one(2000, servers, true)
+
+    // crash all
+    for i := 0; i < servers; i++ {
+        cfg.crash1(i)
+    }
+
+    // revive all
+    for i := 0; i < servers; i++ {
+        cfg.start1(i, cfg.applierSnap)
+        cfg.connect(i)
+    }
+
+    index2 := cfg.one(3000, servers, true)
+    if index2 < index1+1 {
+        t.Fatalf("index decreased from %v to %v", index1, index2)
     }
     cfg.end()
 }

@@ -166,14 +166,19 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
     rf.raftLog.Snapshot = clone(args.Snapshot)
     rf.pendingSnapshot = true
 
+    // any situations where args.LastIncludedIndex <= rf.commitIndex?
+    // I don't think so. If args.LastIncludedIndex <= rf.commitIndex, we don't need to install snapshot.
+    // We just append entries.
     if args.LastIncludedIndex > rf.commitIndex {
         rf.commitIndex = args.LastIncludedIndex
         rf.raftLog.LastIncludedIndex = args.LastIncludedIndex
         rf.raftLog.SetTermAtZero(args.LastIncludedTerm)
 
-        // Remove all logs coming before LastIncludedIndex
-        newTailLog := append(rf.raftLog.TailLog[:1])
-        rf.raftLog.TailLog = newTailLog
+        // Remove all logs coming before LastIncludedIndex.
+        // And discard any logs coming after LastIncludedIndex that are not committed.
+        rf.raftLog.TailLog = rf.raftLog.TailLog[:1]
+
+        rf.persist()
 
         rf.applyCond.Signal()
     }
